@@ -44,7 +44,6 @@
 import { ref, reactive, onUnmounted } from 'vue';
 import { IframeBridge } from '../shared/bridge/iframe-bridge';
 import { t, setVocabulary, setLocale } from '../utils/i18n';
-import { sanitizeHtml } from '../utils/sanitizer';
 import { escapeHtml, capitalize } from '../utils/dom';
 import type {
   RichTextCardConfig,
@@ -131,7 +130,7 @@ async function loadContent(
 // --- Bridge callbacks ---
 
 bridge.onInit(async (payload) => {
-  const cfg = payload.config as RichTextCardConfig;
+  const cfg = payload.config as unknown as RichTextCardConfig;
   config.value = cfg;
   editorOptions.value = {
     toolbar: cfg.toolbar !== false,

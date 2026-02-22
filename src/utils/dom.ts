@@ -57,7 +57,7 @@ export function isEmpty(html: string): boolean {
  */
 export function getFirstImage(html: string): string | null {
   const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 /**
@@ -68,7 +68,9 @@ export function getAllLinks(html: string): string[] {
   const regex = /<a[^>]+href=["']([^"']+)["']/gi;
   let match;
   while ((match = regex.exec(html)) !== null) {
-    links.push(match[1]);
+    if (match[1]) {
+      links.push(match[1]);
+    }
   }
   return links;
 }
