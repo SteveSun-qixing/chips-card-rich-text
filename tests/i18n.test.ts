@@ -1,77 +1,80 @@
-import { describe, it, expect, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
-import Renderer from '../src/renderer/Renderer.vue';
-import Editor from '../src/editor/Editor.vue';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  setVocabulary,
+  setLocale,
+  getLocale,
+  t,
+  hasKey,
+  getKeys,
+} from '../src/utils/i18n';
 
-describe('i18n Integration', () => {
-  it('should use vocabulary for text translation in renderer', () => {
-    const wrapper = mount(Renderer);
-    const vm = wrapper.vm as any;
-
-    vm.vocabulary = {
-      'card.loading': '加载中...',
-      'card.error': '加载错误',
-    };
-
-    expect(vm.t('card.loading')).toBe('加载中...');
-    expect(vm.t('card.error')).toBe('加载错误');
+describe('i18n Utility', () => {
+  beforeEach(() => {
+    setVocabulary({});
+    setLocale('zh-CN');
   });
 
-  it('should fallback to key when translation missing in renderer', () => {
-    const wrapper = mount(Renderer);
-    const vm = wrapper.vm as any;
+  it('setVocabulary sets vocabulary correctly', () => {
+    const vocab = { 'toolbar.bold': '粗体', 'toolbar.italic': '斜体' };
+    setVocabulary(vocab);
 
-    vm.vocabulary = {};
-
-    expect(vm.t('missing.key')).toBe('missing.key');
+    expect(t('toolbar.bold')).toBe('粗体');
+    expect(t('toolbar.italic')).toBe('斜体');
   });
 
-  it('should use vocabulary for text translation in editor', () => {
-    const wrapper = mount(Editor);
-    const vm = wrapper.vm as any;
-
-    vm.vocabulary = {
-      'editor.title': '编辑卡片',
-      'actions.save': '保存',
-    };
-
-    expect(vm.t('editor.title')).toBe('编辑卡片');
-    expect(vm.t('actions.save')).toBe('保存');
+  it('setLocale sets locale correctly', () => {
+    setLocale('en-US');
+    expect(getLocale()).toBe('en-US');
   });
 
-  it('should update translations when language changes', () => {
-    const wrapper = mount(Renderer);
-    const vm = wrapper.vm as any;
-
-    // Initial vocabulary
-    vm.vocabulary = { 'card.loading': 'Loading...' };
-    expect(vm.t('card.loading')).toBe('Loading...');
-
-    // Simulate language change
-    vm.vocabulary = { 'card.loading': '読み込み中...' };
-    expect(vm.t('card.loading')).toBe('読み込み中...');
+  it('getLocale returns current locale', () => {
+    expect(getLocale()).toBe('zh-CN');
+    setLocale('ja-JP');
+    expect(getLocale()).toBe('ja-JP');
   });
 
-  it('should handle language change event', async () => {
-    const wrapper = mount(Renderer);
-    const vm = wrapper.vm as any;
+  it('t() returns translated text from vocabulary', () => {
+    setVocabulary({ 'card.loading': '加载中...' });
+    expect(t('card.loading')).toBe('加载中...');
+  });
 
-    const newVocabulary = {
-      'card.loading': 'Loading...',
-      'card.error': 'Error',
-    };
+  it('t() returns key when translation missing', () => {
+    setVocabulary({});
+    expect(t('missing.key')).toBe('missing.key');
+  });
 
-    // Simulate language change via bridge
-    window.postMessage({
-      type: 'language-change',
-      locale: 'en-US',
-      vocabulary: newVocabulary,
-    }, '*');
+  it('t() handles variable substitution with {varName} syntax', () => {
+    setVocabulary({ 'msg.hello': 'Hello, {name}!' });
+    expect(t('msg.hello', { name: 'World' })).toBe('Hello, World!');
+  });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+  it('t() handles multiple variables', () => {
+    setVocabulary({ 'msg.info': '{user} has {count} items' });
+    expect(t('msg.info', { user: 'Alice', count: 5 })).toBe(
+      'Alice has 5 items',
+    );
+  });
 
-    // In test environment, postMessage may not trigger the handler
-    // Just verify the component has the language change mechanism
-    expect(typeof vm.bridge.onLanguageChange).toBe('function');
+  it('hasKey returns true for existing keys', () => {
+    setVocabulary({ 'toolbar.bold': '粗体' });
+    expect(hasKey('toolbar.bold')).toBe(true);
+  });
+
+  it('hasKey returns false for missing keys', () => {
+    setVocabulary({ 'toolbar.bold': '粗体' });
+    expect(hasKey('toolbar.underline')).toBe(false);
+  });
+
+  it('getKeys returns all vocabulary keys', () => {
+    setVocabulary({
+      'toolbar.bold': '粗体',
+      'toolbar.italic': '斜体',
+      'card.loading': '加载中',
+    });
+    const keys = getKeys();
+    expect(keys).toHaveLength(3);
+    expect(keys).toContain('toolbar.bold');
+    expect(keys).toContain('toolbar.italic');
+    expect(keys).toContain('card.loading');
   });
 });

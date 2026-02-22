@@ -1,70 +1,100 @@
-import { describe, it, expect, vi } from 'vitest';
-import { IframeBridge } from '../src/shared/bridge/iframe-bridge';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mount } from '@vue/test-utils';
+import Renderer from '../src/renderer/Renderer.vue';
+
+// Capture bridge callbacks during module execution
+let capturedOnInit: Function | undefined;
+let capturedOnThemeChange: Function | undefined;
+let capturedOnLanguageChange: Function | undefined;
+const mockInvoke = vi.fn();
+const mockDestroy = vi.fn();
+
+vi.mock('../src/shared/bridge/iframe-bridge', () => {
+  return {
+    IframeBridge: vi.fn().mockImplementation(() => ({
+      onInit: vi.fn((cb: Function) => { capturedOnInit = cb; }),
+      onThemeChange: vi.fn((cb: Function) => { capturedOnThemeChange = cb; }),
+      onLanguageChange: vi.fn((cb: Function) => { capturedOnLanguageChange = cb; }),
+      invoke: mockInvoke,
+      destroy: mockDestroy,
+      notifyResize: vi.fn(),
+    })),
+  };
+});
+
+vi.mock('../src/utils/i18n', () => ({
+  t: (key: string) => key,
+  setVocabulary: vi.fn(),
+  setLocale: vi.fn(),
+}));
+
+vi.mock('../src/utils/sanitizer', () => ({
+  sanitizeHtml: (html: string) => html,
+}));
 
 describe('Renderer Bridge Integration', () => {
-  it('should handle initialization flow', async () => {
-    const bridge = new IframeBridge();
-    const initCallback = vi.fn();
+  let postMessageSpy: ReturnType<typeof vi.spyOn>;
 
-    bridge.onInit(initCallback);
-
-    const payload = {
-      config: { title: 'Test Card', content: 'Test Content' },
-      theme: { css: 'body { color: black; }', tokens: {} },
-      resources: {},
-      locale: 'zh-CN',
-    };
-
-    window.postMessage({ type: 'init', payload }, '*');
-
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // In test environment, verify callback was registered
-    expect(typeof initCallback).toBe('function');
-
-    bridge.destroy();
+  beforeEach(() => {
+    capturedOnInit = undefined;
+    capturedOnThemeChange = undefined;
+    capturedOnLanguageChange = undefined;
+    vi.clearAllMocks();
+    postMessageSpy = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
   });
 
-  it('should handle theme injection', async () => {
-    const bridge = new IframeBridge();
-    const themeCallback = vi.fn();
-
-    bridge.onThemeChange(themeCallback);
-
-    const theme = {
-      css: '.chips-card { background: white; }',
-      tokens: { primary: '#000000' },
-    };
-
-    window.postMessage({ type: 'theme-change', theme }, '*');
-
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // In test environment, verify callback was registered
-    expect(typeof themeCallback).toBe('function');
-
-    bridge.destroy();
+  it('should register bridge onInit callback', () => {
+    const wrapper = mount(Renderer);
+    expect(capturedOnInit).toBeDefined();
+    expect(typeof capturedOnInit).toBe('function');
+    wrapper.unmount();
   });
 
-  it('should handle language switching', async () => {
-    const bridge = new IframeBridge();
-    const langCallback = vi.fn();
+  it('should register bridge onThemeChange callback', () => {
+    const wrapper = mount(Renderer);
+    expect(capturedOnThemeChange).toBeDefined();
+    expect(typeof capturedOnThemeChange).toBe('function');
+    wrapper.unmount();
+  });
 
-    bridge.onLanguageChange(langCallback);
+  it('should register bridge onLanguageChange callback', () => {
+    const wrapper = mount(Renderer);
+    expect(capturedOnLanguageChange).toBeDefined();
+    expect(typeof capturedOnLanguageChange).toBe('function');
+    wrapper.unmount();
+  });
 
-    const locale = 'en-US';
-    const vocabulary = {
-      'card.loading': 'Loading...',
-      'card.error': 'Error',
-    };
+  it('should use bridge invoke for resource fetch in onInit', async () => {
+    mockInvoke.mockResolvedValue({ content: '<p>fetched</p>' });
 
-    window.postMessage({ type: 'language-change', locale, vocabulary }, '*');
+    const wrapper = mount(Renderer);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Simulate host sending init with file-based content
+    await capturedOnInit!({
+      config: {
+        card_type: 'RichTextCard',
+        content_source: 'file',
+        content_file: 'content.html',
+      },
+      theme: { css: '', tokens: {} },
+      resources: { cardId: 'card-123' },
+      locale: 'en-US',
+    });
 
-    // In test environment, verify callback was registered
-    expect(typeof langCallback).toBe('function');
+    expect(mockInvoke).toHaveBeenCalledWith('resource', 'fetch', {
+      uri: 'chips://card/card-123/content.html',
+      options: { as: 'text', encoding: 'utf-8', cache: true },
+    });
 
-    bridge.destroy();
+    wrapper.unmount();
+  });
+
+  it('should call bridge destroy on unmount', () => {
+    const wrapper = mount(Renderer);
+    mockDestroy.mockClear();
+
+    wrapper.unmount();
+
+    expect(mockDestroy).toHaveBeenCalledTimes(1);
   });
 });
