@@ -27,9 +27,10 @@ try {
   mkdirSync(join(distDir, 'renderer'), { recursive: true });
   mkdirSync(join(distDir, 'editor'), { recursive: true });
 
-  // Copy HTML files
-  cpSync(rendererHtml, rendererDest);
-  cpSync(editorHtml, editorDest);
+  // Copy HTML files and fix relative paths (moving up one level from dist/src/X/ to dist/X/)
+  const fixPaths = (html) => html.replace(/\.\.\/\.\.\//g, '../');
+  writeFileSync(rendererDest, fixPaths(readFileSync(rendererHtml, 'utf-8')));
+  writeFileSync(editorDest, fixPaths(readFileSync(editorHtml, 'utf-8')));
 
   // Remove src directory from dist
   rmSync(join(distDir, 'src'), { recursive: true, force: true });
