@@ -158,7 +158,7 @@ function setupResizeObserver(): void {
 
 bridge.onInit(async (payload) => {
   try {
-    const cfg = payload.config as RichTextCardConfig;
+    const cfg = payload.config as unknown as RichTextCardConfig;
     config.value = cfg;
     injectThemeCSS(payload.theme.css);
 

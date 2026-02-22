@@ -56,7 +56,7 @@ export class UndoManager {
   undo(): HistoryEntry | null {
     if (!this.canUndo()) return null;
 
-    const entry = this.history[this.position];
+    const entry = this.history[this.position] ?? null;
     this.position--;
     return entry;
   }
@@ -68,7 +68,7 @@ export class UndoManager {
     if (!this.canRedo()) return null;
 
     this.position++;
-    return this.history[this.position];
+    return this.history[this.position] ?? null;
   }
 
   /**

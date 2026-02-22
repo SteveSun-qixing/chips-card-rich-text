@@ -1,15 +1,98 @@
-# Development i18n keys (human-readable format)
+# Development i18n keys for Rich Text Card Plugin
 # These keys will be converted to hash keys in production
+# Flat key format (no richtext. prefix)
 
-card:
-  loading: "Loading..."
-  error: "Error loading card"
+# Plugin lifecycle
+plugin:
+  initialized: "Rich text card plugin initialized"
+  already_initialized: "Plugin already initialized"
+  not_initialized: "Plugin not initialized"
+  started: "Plugin started"
+  stopped: "Plugin stopped"
+  destroyed: "Plugin destroyed"
 
-editor:
-  title: "Edit Card"
-  field_title: "Title"
-  field_content: "Content"
+# Toolbar
+toolbar:
+  bold: "Bold"
+  italic: "Italic"
+  underline: "Underline"
+  strikethrough: "Strikethrough"
+  superscript: "Superscript"
+  subscript: "Subscript"
+  code: "Code"
+  heading: "Heading"
+  paragraph: "Paragraph"
+  ordered_list: "Ordered List"
+  unordered_list: "Unordered List"
+  blockquote: "Blockquote"
+  color: "Text Color"
+  background_color: "Background Color"
+  font_size: "Font Size"
+  align_left: "Align Left"
+  align_center: "Align Center"
+  align_right: "Align Right"
+  align_justify: "Justify"
+  link: "Link"
+  image: "Image"
+  horizontal_rule: "Horizontal Rule"
+  undo: "Undo"
+  redo: "Redo"
+  clear_format: "Clear Format"
 
-actions:
-  save: "Save"
+# Dialogs
+dialog:
   cancel: "Cancel"
+  confirm: "Confirm"
+  close: "Close"
+  link_title: "Insert Link"
+  link_url: "URL"
+  link_url_placeholder: "Enter URL"
+  link_text: "Link Text"
+  link_text_placeholder: "Display text (optional)"
+  link_new_window: "Open in new window"
+  remove_link: "Remove Link"
+  image_title: "Insert Image"
+  image_upload: "Upload Image"
+  image_url: "Image URL"
+  image_url_placeholder: "Enter image URL"
+  image_alt: "Alt Text"
+  image_alt_placeholder: "Image description (optional)"
+
+# Hints
+hint:
+  placeholder: "Start typing..."
+  image_upload_hint: "Click or drag image here to upload"
+  image_max_size: "Max {max}MB"
+  word_count: "Words: {count}"
+
+# Messages
+message:
+  save_success: "Saved successfully"
+  upload_success: "Uploaded successfully"
+
+# Errors
+error:
+  invalid_url: "Invalid URL"
+  content_required: "Content cannot be empty"
+  content_too_long: "Content exceeds maximum length {max}"
+  unsupported_format: "Unsupported file format"
+  image_too_large: "Image size exceeds {max}MB"
+  render_failed: "Render failed"
+  load_failed: "Load failed"
+  file_not_found: "File not found: {file}"
+  editor_not_initialized: "Editor not initialized"
+
+# Confirm
+confirm:
+  clear_content: "Are you sure you want to clear all content?"
+
+# Status
+status:
+  loading: "Loading..."
+  saving: "Saving..."
+
+# Log
+log:
+  renderer_created: "Renderer created"
+  editor_created: "Editor created"
+  service_registered: "Service registered: {service}"

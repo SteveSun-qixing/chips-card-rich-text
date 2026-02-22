@@ -1,37 +1,110 @@
-import { describe, it, expect, vi } from 'vitest';
-import { IframeBridge } from '../src/shared/bridge/iframe-bridge';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mount } from '@vue/test-utils';
+import Editor from '../src/editor/Editor.vue';
+
+let capturedOnInit: Function | undefined;
+let capturedOnThemeChange: Function | undefined;
+let capturedOnLanguageChange: Function | undefined;
+const mockNotifyConfigUpdate = vi.fn();
+const mockNotifyCancel = vi.fn();
+const mockDestroy = vi.fn();
+
+vi.mock('../src/shared/bridge/iframe-bridge', () => {
+  return {
+    IframeBridge: vi.fn().mockImplementation(() => ({
+      onInit: vi.fn((cb: Function) => { capturedOnInit = cb; }),
+      onThemeChange: vi.fn((cb: Function) => { capturedOnThemeChange = cb; }),
+      onLanguageChange: vi.fn((cb: Function) => { capturedOnLanguageChange = cb; }),
+      invoke: vi.fn(),
+      destroy: mockDestroy,
+      notifyConfigUpdate: mockNotifyConfigUpdate,
+      notifyCancel: mockNotifyCancel,
+      notifyResize: vi.fn(),
+    })),
+  };
+});
+
+vi.mock('../src/utils/i18n', () => ({
+  t: (key: string) => key,
+  setVocabulary: vi.fn(),
+  setLocale: vi.fn(),
+}));
+
+vi.mock('../src/utils/sanitizer', () => ({
+  sanitizeHtml: (html: string) => html,
+}));
+
+vi.mock('../src/utils/dom', () => ({
+  escapeHtml: (s: string) => s,
+  capitalize: (s: string) => s.charAt(0).toUpperCase() + s.slice(1),
+  getBlockParent: () => null,
+}));
 
 describe('Editor Bridge Integration', () => {
-  it('should notify config update', () => {
-    const bridge = new IframeBridge();
-    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
+  let postMessageSpy: ReturnType<typeof vi.spyOn>;
 
-    const config = {
-      title: 'Updated Title',
-      content: 'Updated Content',
-    };
-
-    bridge.notifyConfigUpdate(config);
-
-    expect(postMessageSpy).toHaveBeenCalledWith(
-      { type: 'config-update', config },
-      '*'
-    );
-
-    bridge.destroy();
+  beforeEach(() => {
+    capturedOnInit = undefined;
+    capturedOnThemeChange = undefined;
+    capturedOnLanguageChange = undefined;
+    vi.clearAllMocks();
+    postMessageSpy = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
   });
 
-  it('should notify cancel operation', () => {
-    const bridge = new IframeBridge();
-    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
+  it('should register bridge onInit callback', () => {
+    const wrapper = mount(Editor);
+    expect(capturedOnInit).toBeDefined();
+    expect(typeof capturedOnInit).toBe('function');
+    wrapper.unmount();
+  });
 
-    bridge.notifyCancel();
+  it('should register bridge onThemeChange callback', () => {
+    const wrapper = mount(Editor);
+    expect(capturedOnThemeChange).toBeDefined();
+    expect(typeof capturedOnThemeChange).toBe('function');
+    wrapper.unmount();
+  });
 
-    expect(postMessageSpy).toHaveBeenCalledWith(
-      { type: 'editor-cancel' },
-      '*'
+  it('should register bridge onLanguageChange callback', () => {
+    const wrapper = mount(Editor);
+    expect(capturedOnLanguageChange).toBeDefined();
+    expect(typeof capturedOnLanguageChange).toBe('function');
+    wrapper.unmount();
+  });
+
+  it('should call notifyConfigUpdate when save button is clicked', async () => {
+    const wrapper = mount(Editor);
+
+    // Simulate init to populate config
+    await capturedOnInit!({
+      config: {
+        card_type: 'RichTextCard',
+        content_source: 'inline',
+        content_text: '<p>test</p>',
+      },
+      theme: { css: '', tokens: {} },
+      resources: {},
+      locale: 'en-US',
+    });
+    await wrapper.vm.$nextTick();
+
+    mockNotifyConfigUpdate.mockClear();
+    await wrapper.find('.chips-button--primary').trigger('click');
+
+    expect(mockNotifyConfigUpdate).toHaveBeenCalledTimes(1);
+    expect(mockNotifyConfigUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ card_type: 'RichTextCard' })
     );
+    wrapper.unmount();
+  });
 
-    bridge.destroy();
+  it('should call notifyCancel when cancel button is clicked', async () => {
+    const wrapper = mount(Editor);
+    mockNotifyCancel.mockClear();
+
+    await wrapper.find('.chips-button--ghost').trigger('click');
+
+    expect(mockNotifyCancel).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
   });
 });
