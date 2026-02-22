@@ -1,0 +1,27 @@
+schemaVersion: "1.0"
+id: "chips-official.rich-text-card"
+name: "card_type.rich_text.name"
+version: "1.0.0"
+type: "card"
+publisher: "Chips Official"
+description: "card_type.rich_text.desc"
+icon: "assets/icon.png"
+
+entry:
+  renderer: "dist/renderer/index.html"
+  editor: "dist/editor/index.html"
+
+capabilities:
+  cardType: "RichTextCard"
+
+permissions:
+  - resource.fetch
+  - theme.read
+  - i18n.read
+
+locales:
+  default: "zh-CN"
+  supported: ["zh-CN", "en-US", "ja-JP"]
+
+dependencies:
+  host: ">=1.0.0"

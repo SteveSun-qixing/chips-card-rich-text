@@ -1,0 +1,15 @@
+# Development i18n keys (human-readable format)
+# These keys will be converted to hash keys in production
+
+card:
+  loading: "Loading..."
+  error: "Error loading card"
+
+editor:
+  title: "Edit Card"
+  field_title: "Title"
+  field_content: "Content"
+
+actions:
+  save: "Save"
+  cancel: "Cancel"

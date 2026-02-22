@@ -1,0 +1,30 @@
+# Plugin vocabulary
+# Maps plugin-specific terms to i18n keys
+
+vocabulary:
+  zh-CN:
+    card.loading: "加载中..."
+    card.error: "加载卡片时出错"
+    editor.title: "编辑卡片"
+    editor.field_title: "标题"
+    editor.field_content: "内容"
+    actions.save: "保存"
+    actions.cancel: "取消"
+
+  en-US:
+    card.loading: "Loading..."
+    card.error: "Error loading card"
+    editor.title: "Edit Card"
+    editor.field_title: "Title"
+    editor.field_content: "Content"
+    actions.save: "Save"
+    actions.cancel: "Cancel"
+
+  ja-JP:
+    card.loading: "読み込み中..."
+    card.error: "カードの読み込みエラー"
+    editor.title: "カードを編集"
+    editor.field_title: "タイトル"
+    editor.field_content: "内容"
+    actions.save: "保存"
+    actions.cancel: "キャンセル"
