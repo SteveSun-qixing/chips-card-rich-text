@@ -48,6 +48,18 @@ describe('i18n Utility', () => {
     expect(t('msg.hello', { name: 'World' })).toBe('Hello, World!');
   });
 
+  it('t() uses built-in fallback vocabulary when bridge vocabulary is empty', () => {
+    setVocabulary({});
+    setLocale('zh-CN');
+    expect(t('hint.placeholder')).toBe('请输入内容...');
+  });
+
+  it('ignores placeholder vocabulary entries where value equals key', () => {
+    setLocale('en-US');
+    setVocabulary({ 'toolbar.bold': 'toolbar.bold' });
+    expect(t('toolbar.bold')).toBe('Bold');
+  });
+
   it('t() handles multiple variables', () => {
     setVocabulary({ 'msg.info': '{user} has {count} items' });
     expect(t('msg.info', { user: 'Alice', count: 5 })).toBe(

@@ -13,6 +13,9 @@ describe('Message Types', () => {
   it('should validate BridgeRequestMessage structure', () => {
     const message: BridgeRequestMessage = {
       type: 'bridge-request',
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
+      requestNonce: 'request-nonce-1',
       requestId: 'test-id',
       namespace: 'test',
       action: 'action',
@@ -65,16 +68,22 @@ describe('Message Types', () => {
   it('should validate ConfigUpdateMessage structure', () => {
     const message: ConfigUpdateMessage = {
       type: 'config-update',
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
       config: { title: 'Updated' },
+      persist: true,
     };
 
     expect(message.type).toBe('config-update');
     expect(message.config).toEqual({ title: 'Updated' });
+    expect(message.persist).toBe(true);
   });
 
   it('should validate ResizeMessage structure', () => {
     const message: ResizeMessage = {
       type: 'resize',
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
       width: 800,
       height: 600,
     };

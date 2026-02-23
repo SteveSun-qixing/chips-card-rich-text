@@ -75,6 +75,8 @@ const editorOptions = ref<EditorOptions>({
   toolbar: true,
   maxImageSize: 5,
 });
+const AUTO_SYNC_DELAY = 400;
+let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
 const state: RichTextEditorState = reactive({
   content: '',
@@ -190,6 +192,12 @@ function handleContentChange(html: string): void {
   state.content = html;
   state.wordCount = html.replace(/<[^>]*>/g, '').replace(/\s/g, '').length;
   state.isDirty = true;
+  config.value = {
+    ...config.value,
+    content_source: 'inline',
+    content_text: html,
+  };
+  scheduleConfigAutoSync();
 }
 
 function handleSelectionChange(
@@ -351,12 +359,33 @@ function wrapSelectionWithStyle(style: string): void {
 
 // --- Save / Cancel ---
 
-function handleSave(): void {
-  const updatedConfig: Record<string, unknown> = {
+function clearAutoSyncTimer(): void {
+  if (!autoSyncTimer) {
+    return;
+  }
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer = null;
+}
+
+function buildUpdatedConfig(): Record<string, unknown> {
+  return {
     ...config.value,
+    content_source: 'inline',
     content_text: state.content,
   };
-  bridge.notifyConfigUpdate(updatedConfig);
+}
+
+function scheduleConfigAutoSync(): void {
+  clearAutoSyncTimer();
+  autoSyncTimer = setTimeout(() => {
+    autoSyncTimer = null;
+    bridge.notifyConfigUpdateWithOptions(buildUpdatedConfig(), { persist: true });
+  }, AUTO_SYNC_DELAY);
+}
+
+function handleSave(): void {
+  clearAutoSyncTimer();
+  bridge.notifyConfigUpdateWithOptions(buildUpdatedConfig(), { persist: true });
 }
 
 function handleCancel(): void {
@@ -374,6 +403,7 @@ function injectThemeCSS(css: string): void {
 }
 
 onUnmounted(() => {
+  clearAutoSyncTimer();
   bridge.destroy();
 });
 </script>

@@ -6,6 +6,7 @@ let capturedOnInit: Function | undefined;
 let capturedOnThemeChange: Function | undefined;
 let capturedOnLanguageChange: Function | undefined;
 const mockNotifyConfigUpdate = vi.fn();
+const mockNotifyConfigUpdateWithOptions = vi.fn();
 const mockNotifyCancel = vi.fn();
 const mockDestroy = vi.fn();
 
@@ -18,6 +19,7 @@ vi.mock('../src/shared/bridge/iframe-bridge', () => {
       invoke: vi.fn(),
       destroy: mockDestroy,
       notifyConfigUpdate: mockNotifyConfigUpdate,
+      notifyConfigUpdateWithOptions: mockNotifyConfigUpdateWithOptions,
       notifyCancel: mockNotifyCancel,
       notifyResize: vi.fn(),
     })),
@@ -72,7 +74,7 @@ describe('Editor Bridge Integration', () => {
     wrapper.unmount();
   });
 
-  it('should call notifyConfigUpdate when save button is clicked', async () => {
+  it('should call notifyConfigUpdateWithOptions when save button is clicked', async () => {
     const wrapper = mount(Editor);
 
     // Simulate init to populate config
@@ -89,11 +91,13 @@ describe('Editor Bridge Integration', () => {
     await wrapper.vm.$nextTick();
 
     mockNotifyConfigUpdate.mockClear();
+    mockNotifyConfigUpdateWithOptions.mockClear();
     await wrapper.find('.chips-button--primary').trigger('click');
 
-    expect(mockNotifyConfigUpdate).toHaveBeenCalledTimes(1);
-    expect(mockNotifyConfigUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ card_type: 'RichTextCard' })
+    expect(mockNotifyConfigUpdateWithOptions).toHaveBeenCalledTimes(1);
+    expect(mockNotifyConfigUpdateWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ card_type: 'RichTextCard' }),
+      { persist: true }
     );
     wrapper.unmount();
   });
@@ -106,5 +110,43 @@ describe('Editor Bridge Integration', () => {
 
     expect(mockNotifyCancel).toHaveBeenCalledTimes(1);
     wrapper.unmount();
+  });
+
+  it('should auto sync content updates with persist true', async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(Editor);
+
+    await capturedOnInit!({
+      config: {
+        card_type: 'RichTextCard',
+        content_source: 'inline',
+        content_text: '',
+      },
+      theme: { css: '', tokens: {} },
+      resources: {},
+      locale: 'en-US',
+    });
+    await wrapper.vm.$nextTick();
+
+    const editable = wrapper.find('.chips-richtext-editor-content');
+    (editable.element as HTMLElement).innerHTML = '<p>auto sync</p>';
+    await editable.trigger('input');
+
+    expect(mockNotifyConfigUpdateWithOptions).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(450);
+    await wrapper.vm.$nextTick();
+
+    expect(mockNotifyConfigUpdateWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        card_type: 'RichTextCard',
+        content_text: '<p>auto sync</p>',
+        content_source: 'inline',
+      }),
+      { persist: true }
+    );
+
+    wrapper.unmount();
+    vi.useRealTimers();
   });
 });
