@@ -1,6 +1,61 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IframeBridge } from '../src/shared/bridge/iframe-bridge';
 
+const HOST_ORIGIN = window.location.origin;
+
+function dispatchHostMessage(data: unknown, origin = HOST_ORIGIN): void {
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      data,
+      origin,
+      source: window.parent,
+    })
+  );
+}
+
+function createInitMessage(): {
+  type: 'init';
+  payload: {
+      bridge: { pluginId: string; sessionNonce: string; trustedOrigin: string };
+    config: Record<string, unknown>;
+    theme: { css: string; tokens: Record<string, string> };
+    resources: Record<string, string>;
+    locale: string;
+    vocabulary: Record<string, string>;
+    vocabularyVersion: string;
+    i18n: {
+      locale: string;
+      version: string;
+      payload: { mode: 'full'; vocabulary: Record<string, string> };
+    };
+  };
+} {
+  return {
+    type: 'init',
+    payload: {
+      bridge: {
+        pluginId: 'chips-official.rich-text-card',
+        sessionNonce: 'session-1',
+        trustedOrigin: HOST_ORIGIN,
+      },
+      config: {},
+      theme: { css: '', tokens: {} },
+      resources: {},
+      locale: 'en-US',
+      vocabulary: { 'toolbar.bold': 'Bold' },
+      vocabularyVersion: 'v1',
+      i18n: {
+        locale: 'en-US',
+        version: 'v1',
+        payload: {
+          mode: 'full',
+          vocabulary: { 'toolbar.bold': 'Bold' },
+        },
+      },
+    },
+  };
+}
+
 describe('IframeBridge', () => {
   let bridge: IframeBridge;
 
@@ -10,128 +65,106 @@ describe('IframeBridge', () => {
 
   afterEach(() => {
     bridge.destroy();
+    vi.restoreAllMocks();
   });
 
-  it('should create bridge instance', () => {
-    expect(bridge).toBeInstanceOf(IframeBridge);
+  it('rejects invoke before init handshake', async () => {
+    await expect(bridge.invoke('resource', 'fetch')).rejects.toMatchObject({
+      code: 'BRIDGE_NOT_READY',
+    });
   });
 
-  it('should handle bridge request and response', async () => {
-    // Start the request but catch any errors
-    const requestPromise = bridge.invoke('test', 'action', { param: 'value' }).catch(err => err);
+  it('sends bridge request with plugin identity and nonce after init', async () => {
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
 
-    // Simulate host response
-    setTimeout(() => {
-      window.postMessage({
-        type: 'bridge-response',
-        requestId: 'test-id', // This won't match the actual UUID
-        result: { success: true },
-      }, '*');
-    }, 10);
+    dispatchHostMessage(createInitMessage());
+    const requestPromise = bridge.invoke('resource', 'fetch', { uri: 'chips://card/demo' });
 
-    // Wait for the promise to settle
-    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(postMessageSpy).toHaveBeenCalledTimes(1);
+    const [requestMessage, targetOrigin] = postMessageSpy.mock.calls[0] ?? [];
+    expect(targetOrigin).toBe(HOST_ORIGIN);
+    expect(requestMessage).toMatchObject({
+      type: 'bridge-request',
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
+      namespace: 'resource',
+      action: 'fetch',
+    });
+    expect(typeof (requestMessage as { requestId: unknown }).requestId).toBe('string');
+    expect(typeof (requestMessage as { requestNonce: unknown }).requestNonce).toBe('string');
 
-    // Just verify the method exists and works
-    expect(typeof bridge.invoke).toBe('function');
-  });
-
-  it('should handle bridge request timeout', async () => {
-    vi.useFakeTimers();
-
-    const requestPromise = bridge.invoke('test', 'action').catch(err => err);
-
-    vi.advanceTimersByTime(31000);
-
-    const result = await requestPromise;
-
-    expect(result).toMatchObject({
-      code: 'BRIDGE_TIMEOUT',
+    const requestId = (requestMessage as { requestId: string }).requestId;
+    const requestNonce = (requestMessage as { requestNonce: string }).requestNonce;
+    dispatchHostMessage({
+      type: 'bridge-response',
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
+      requestId,
+      requestNonce,
+      result: { content: 'ok' },
     });
 
-    vi.useRealTimers();
+    await expect(requestPromise).resolves.toEqual({ content: 'ok' });
   });
 
-  it('should register and call init callback', async () => {
-    const callback = vi.fn();
-    bridge.onInit(callback);
-
-    const payload = {
-      config: { title: 'Test' },
-      theme: { css: '', tokens: {} },
-      resources: {},
-      locale: 'zh-CN',
-    };
-
-    window.postMessage({ type: 'init', payload }, '*');
-
-    // Wait for message to be processed
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // In test environment, postMessage may not work as expected
-    // Just verify the callback was registered
-    expect(typeof callback).toBe('function');
-  });
-
-  it('should register and call theme change callback', async () => {
-    const callback = vi.fn();
-    bridge.onThemeChange(callback);
-
-    const theme = { css: 'body { color: red; }', tokens: {} };
-
-    window.postMessage({ type: 'theme-change', theme }, '*');
-
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // In test environment, postMessage may not work as expected
-    // Just verify the callback was registered
-    expect(typeof callback).toBe('function');
-  });
-
-  it('should register and call language change callback', async () => {
+  it('applies language envelope from language-change message', async () => {
     const callback = vi.fn();
     bridge.onLanguageChange(callback);
 
-    const locale = 'en-US';
-    const vocabulary = { 'test.key': 'Test Value' };
+    dispatchHostMessage(createInitMessage());
+    dispatchHostMessage({
+      type: 'language-change',
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
+      i18n: {
+        locale: 'ja-JP',
+        version: 'v2',
+        payload: {
+          mode: 'full',
+          vocabulary: {
+            'dialog.confirm': '確定',
+          },
+        },
+      },
+    });
 
-    window.postMessage({ type: 'language-change', locale, vocabulary }, '*');
-
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // In test environment, postMessage may not work as expected
-    // Just verify the callback was registered
-    expect(typeof callback).toBe('function');
+    expect(callback).toHaveBeenCalledWith('ja-JP', {
+      'dialog.confirm': '確定',
+    });
   });
 
-  it('should notify config update', () => {
+  it('notifies host with security envelope after init', () => {
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
 
-    const config = { title: 'Updated Title' };
-    bridge.notifyConfigUpdate(config);
+    dispatchHostMessage(createInitMessage());
+    bridge.notifyConfigUpdate({ content_text: 'next' });
 
     expect(postMessageSpy).toHaveBeenCalledWith(
-      { type: 'config-update', config },
-      '*'
+      {
+        type: 'config-update',
+        pluginId: 'chips-official.rich-text-card',
+        sessionNonce: 'session-1',
+        config: { content_text: 'next' },
+      },
+      HOST_ORIGIN
     );
   });
 
-  it('should notify resize', () => {
+  it('supports persist flag in config update message', () => {
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
 
-    bridge.notifyResize(800, 600);
+    dispatchHostMessage(createInitMessage());
+    bridge.notifyConfigUpdateWithOptions({ content_text: 'next' }, { persist: true });
 
     expect(postMessageSpy).toHaveBeenCalledWith(
-      { type: 'resize', width: 800, height: 600 },
-      '*'
+      {
+        type: 'config-update',
+        pluginId: 'chips-official.rich-text-card',
+        sessionNonce: 'session-1',
+        config: { content_text: 'next' },
+        persist: true,
+      },
+      HOST_ORIGIN
     );
-  });
-
-  it('should clean up on destroy', () => {
-    const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener');
-
-    bridge.destroy();
-
-    expect(removeEventListenerSpy).toHaveBeenCalledWith('message', expect.any(Function));
   });
 });

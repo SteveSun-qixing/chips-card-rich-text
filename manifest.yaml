@@ -1,4 +1,4 @@
-schemaVersion: "1.0"
+schemaVersion: "1.0.0"
 id: "chips-official.rich-text-card"
 name: "card_type.rich_text.name"
 version: "1.0.0"
@@ -23,5 +23,5 @@ locales:
   default: "zh-CN"
   supported: ["zh-CN", "en-US", "ja-JP"]
 
-dependencies:
+compatibility:
   host: ">=1.0.0"

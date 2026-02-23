@@ -3,6 +3,9 @@
  */
 export interface BridgeRequestMessage {
   type: 'bridge-request';
+  pluginId: string;
+  sessionNonce: string;
+  requestNonce: string;
   requestId: string;
   namespace: string;
   action: string;
@@ -14,6 +17,9 @@ export interface BridgeRequestMessage {
  */
 export interface BridgeResponseMessage {
   type: 'bridge-response';
+  pluginId?: string;
+  sessionNonce?: string;
+  requestNonce?: string;
   requestId: string;
   result?: unknown;
   error?: {
@@ -23,6 +29,23 @@ export interface BridgeResponseMessage {
   };
 }
 
+export interface LanguagePayload {
+  mode: 'full';
+  vocabulary: Record<string, string>;
+}
+
+export interface LanguageEnvelope {
+  locale: string;
+  version: string;
+  payload: LanguagePayload;
+}
+
+export interface BridgeInitContext {
+  pluginId: string;
+  sessionNonce: string;
+  trustedOrigin?: string;
+}
+
 /**
  * Host → Card: Initialization message
  */
@@ -30,12 +53,16 @@ export interface InitMessage {
   type: 'init';
   payload: {
     config: Record<string, unknown>;
+    bridge?: BridgeInitContext;
     theme: {
       css: string;
       tokens: Record<string, string>;
     };
     resources: Record<string, string>;
     locale: string;
+    vocabulary?: Record<string, string>;
+    vocabularyVersion?: string;
+    i18n?: LanguageEnvelope;
   };
 }
 
@@ -44,7 +71,10 @@ export interface InitMessage {
  */
 export interface ConfigUpdateMessage {
   type: 'config-update';
+  pluginId: string;
+  sessionNonce: string;
   config: Record<string, unknown>;
+  persist?: boolean;
 }
 
 /**
@@ -52,6 +82,8 @@ export interface ConfigUpdateMessage {
  */
 export interface ResizeMessage {
   type: 'resize';
+  pluginId: string;
+  sessionNonce: string;
   width: number;
   height: number;
 }
@@ -61,6 +93,8 @@ export interface ResizeMessage {
  */
 export interface ThemeChangeMessage {
   type: 'theme-change';
+  pluginId?: string;
+  sessionNonce?: string;
   theme: {
     css: string;
     tokens: Record<string, string>;
@@ -72,8 +106,12 @@ export interface ThemeChangeMessage {
  */
 export interface LanguageChangeMessage {
   type: 'language-change';
-  locale: string;
-  vocabulary: Record<string, string>;
+  pluginId?: string;
+  sessionNonce?: string;
+  locale?: string;
+  vocabulary?: Record<string, string>;
+  vocabularyVersion?: string;
+  i18n?: LanguageEnvelope;
 }
 
 /**
@@ -81,6 +119,8 @@ export interface LanguageChangeMessage {
  */
 export interface EditorCancelMessage {
   type: 'editor-cancel';
+  pluginId: string;
+  sessionNonce: string;
 }
 
 /**
