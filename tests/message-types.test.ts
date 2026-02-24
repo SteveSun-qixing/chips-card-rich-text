@@ -13,7 +13,7 @@ describe('Message Types', () => {
   it('should validate BridgeRequestMessage structure', () => {
     const message: BridgeRequestMessage = {
       type: 'bridge-request',
-      pluginId: 'chips-official.rich-text-card',
+      pluginId: 'chips-official.sample-card',
       sessionNonce: 'session-1',
       requestNonce: 'request-nonce-1',
       requestId: 'test-id',
@@ -55,20 +55,36 @@ describe('Message Types', () => {
       type: 'init',
       payload: {
         config: { title: 'Test' },
+        bridge: {
+          pluginId: 'chips-official.sample-card',
+          sessionNonce: 'session-1',
+          trustedOrigin: 'https://host.example',
+        },
         theme: { css: '', tokens: {} },
         resources: {},
         locale: 'zh-CN',
+        vocabulary: { 'card.loading': '加载中' },
+        vocabularyVersion: 'v1',
+        i18n: {
+          locale: 'zh-CN',
+          version: 'v1',
+          payload: {
+            mode: 'full',
+            vocabulary: { 'card.loading': '加载中' },
+          },
+        },
       },
     };
 
     expect(message.type).toBe('init');
     expect(message.payload.locale).toBe('zh-CN');
+    expect(message.payload.bridge?.pluginId).toBe('chips-official.sample-card');
   });
 
   it('should validate ConfigUpdateMessage structure', () => {
     const message: ConfigUpdateMessage = {
       type: 'config-update',
-      pluginId: 'chips-official.rich-text-card',
+      pluginId: 'chips-official.sample-card',
       sessionNonce: 'session-1',
       config: { title: 'Updated' },
       persist: true,
@@ -82,7 +98,7 @@ describe('Message Types', () => {
   it('should validate ResizeMessage structure', () => {
     const message: ResizeMessage = {
       type: 'resize',
-      pluginId: 'chips-official.rich-text-card',
+      pluginId: 'chips-official.sample-card',
       sessionNonce: 'session-1',
       width: 800,
       height: 600,
@@ -109,12 +125,20 @@ describe('Message Types', () => {
   it('should validate LanguageChangeMessage structure', () => {
     const message: LanguageChangeMessage = {
       type: 'language-change',
-      locale: 'en-US',
-      vocabulary: { 'test.key': 'Test Value' },
+      pluginId: 'chips-official.sample-card',
+      sessionNonce: 'session-1',
+      i18n: {
+        locale: 'en-US',
+        version: 'v2',
+        payload: {
+          mode: 'full',
+          vocabulary: { 'test.key': 'Test Value' },
+        },
+      },
     };
 
     expect(message.type).toBe('language-change');
-    expect(message.locale).toBe('en-US');
-    expect(message.vocabulary['test.key']).toBe('Test Value');
+    expect(message.i18n?.locale).toBe('en-US');
+    expect(message.i18n?.payload.vocabulary['test.key']).toBe('Test Value');
   });
 });

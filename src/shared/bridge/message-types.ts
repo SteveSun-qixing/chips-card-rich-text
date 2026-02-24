@@ -1,142 +1,71 @@
-/**
- * Card → Host: Request message to invoke Bridge API
- */
-export interface BridgeRequestMessage {
-  type: 'bridge-request';
-  pluginId: string;
-  sessionNonce: string;
-  requestNonce: string;
-  requestId: string;
-  namespace: string;
-  action: string;
-  params?: Record<string, unknown>;
-}
+import type {
+  CardRuntimeBridgeContext,
+  CardRuntimeBridgeRequestMessage,
+  CardRuntimeBridgeResponseMessage,
+  CardRuntimeConfigUpdateMessage,
+  CardRuntimeEditorCancelMessage,
+  CardRuntimeInboundMessage,
+  CardRuntimeInitMessage,
+  CardRuntimeLanguageChangeMessage,
+  CardRuntimeLanguageEnvelope,
+  CardRuntimeLanguagePayload,
+  CardRuntimeOutboundMessage,
+  CardRuntimeResizeMessage,
+  CardRuntimeThemeChangeMessage,
+} from '@chips/sdk/card-runtime';
 
 /**
- * Host → Card: Response message from Bridge API
+ * Card -> Host: Request message to invoke Bridge API
  */
-export interface BridgeResponseMessage {
-  type: 'bridge-response';
-  pluginId?: string;
-  sessionNonce?: string;
-  requestNonce?: string;
-  requestId: string;
-  result?: unknown;
-  error?: {
-    code: string;
-    message: string;
-    details?: unknown;
-  };
-}
-
-export interface LanguagePayload {
-  mode: 'full';
-  vocabulary: Record<string, string>;
-}
-
-export interface LanguageEnvelope {
-  locale: string;
-  version: string;
-  payload: LanguagePayload;
-}
-
-export interface BridgeInitContext {
-  pluginId: string;
-  sessionNonce: string;
-  trustedOrigin?: string;
-}
+export type BridgeRequestMessage = CardRuntimeBridgeRequestMessage;
 
 /**
- * Host → Card: Initialization message
+ * Host -> Card: Response message from Bridge API
  */
-export interface InitMessage {
-  type: 'init';
-  payload: {
-    config: Record<string, unknown>;
-    bridge?: BridgeInitContext;
-    theme: {
-      css: string;
-      tokens: Record<string, string>;
-    };
-    resources: Record<string, string>;
-    locale: string;
-    vocabulary?: Record<string, string>;
-    vocabularyVersion?: string;
-    i18n?: LanguageEnvelope;
-  };
-}
+export type BridgeResponseMessage = CardRuntimeBridgeResponseMessage;
+
+export type LanguagePayload = CardRuntimeLanguagePayload;
+
+export type LanguageEnvelope = CardRuntimeLanguageEnvelope;
+
+export type BridgeInitContext = CardRuntimeBridgeContext;
 
 /**
- * Card → Host: Configuration update notification
+ * Host -> Card: Initialization message
  */
-export interface ConfigUpdateMessage {
-  type: 'config-update';
-  pluginId: string;
-  sessionNonce: string;
-  config: Record<string, unknown>;
-  persist?: boolean;
-}
+export type InitMessage = CardRuntimeInitMessage;
 
 /**
- * Card → Host: Resize notification
+ * Card -> Host: Configuration update notification
  */
-export interface ResizeMessage {
-  type: 'resize';
-  pluginId: string;
-  sessionNonce: string;
-  width: number;
-  height: number;
-}
+export type ConfigUpdateMessage = CardRuntimeConfigUpdateMessage;
 
 /**
- * Host → Card: Theme change notification
+ * Card -> Host: Resize notification
  */
-export interface ThemeChangeMessage {
-  type: 'theme-change';
-  pluginId?: string;
-  sessionNonce?: string;
-  theme: {
-    css: string;
-    tokens: Record<string, string>;
-  };
-}
+export type ResizeMessage = CardRuntimeResizeMessage;
 
 /**
- * Host → Card: Language change notification
+ * Host -> Card: Theme change notification
  */
-export interface LanguageChangeMessage {
-  type: 'language-change';
-  pluginId?: string;
-  sessionNonce?: string;
-  locale?: string;
-  vocabulary?: Record<string, string>;
-  vocabularyVersion?: string;
-  i18n?: LanguageEnvelope;
-}
+export type ThemeChangeMessage = CardRuntimeThemeChangeMessage;
 
 /**
- * Card → Host: Editor cancel notification
+ * Host -> Card: Language change notification
  */
-export interface EditorCancelMessage {
-  type: 'editor-cancel';
-  pluginId: string;
-  sessionNonce: string;
-}
+export type LanguageChangeMessage = CardRuntimeLanguageChangeMessage;
 
 /**
- * All inbound message types (Host → Card)
+ * Card -> Host: Editor cancel notification
  */
-export type InboundMessage =
-  | BridgeResponseMessage
-  | InitMessage
-  | ThemeChangeMessage
-  | LanguageChangeMessage;
+export type EditorCancelMessage = CardRuntimeEditorCancelMessage;
 
 /**
- * All outbound message types (Card → Host)
+ * All inbound message types (Host -> Card)
  */
-export type OutboundMessage =
-  | BridgeRequestMessage
-  | ConfigUpdateMessage
-  | ResizeMessage
-  | EditorCancelMessage;
+export type InboundMessage = CardRuntimeInboundMessage;
+
+/**
+ * All outbound message types (Card -> Host)
+ */
+export type OutboundMessage = CardRuntimeOutboundMessage;

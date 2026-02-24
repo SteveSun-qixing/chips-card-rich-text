@@ -16,7 +16,7 @@ function dispatchHostMessage(data: unknown, origin = HOST_ORIGIN): void {
 function createInitMessage(): {
   type: 'init';
   payload: {
-      bridge: { pluginId: string; sessionNonce: string; trustedOrigin: string };
+    bridge: { pluginId: string; sessionNonce: string; trustedOrigin: string };
     config: Record<string, unknown>;
     theme: { css: string; tokens: Record<string, string> };
     resources: Record<string, string>;
@@ -34,7 +34,7 @@ function createInitMessage(): {
     type: 'init',
     payload: {
       bridge: {
-        pluginId: 'chips-official.rich-text-card',
+        pluginId: 'chips-official.sample-card',
         sessionNonce: 'session-1',
         trustedOrigin: HOST_ORIGIN,
       },
@@ -74,7 +74,7 @@ describe('IframeBridge', () => {
     });
   });
 
-  it('sends bridge request with plugin identity and nonce after init', async () => {
+  it('sends bridge request with security envelope after init', async () => {
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
 
     dispatchHostMessage(createInitMessage());
@@ -85,7 +85,7 @@ describe('IframeBridge', () => {
     expect(targetOrigin).toBe(HOST_ORIGIN);
     expect(requestMessage).toMatchObject({
       type: 'bridge-request',
-      pluginId: 'chips-official.rich-text-card',
+      pluginId: 'chips-official.sample-card',
       sessionNonce: 'session-1',
       namespace: 'resource',
       action: 'fetch',
@@ -97,7 +97,7 @@ describe('IframeBridge', () => {
     const requestNonce = (requestMessage as { requestNonce: string }).requestNonce;
     dispatchHostMessage({
       type: 'bridge-response',
-      pluginId: 'chips-official.rich-text-card',
+      pluginId: 'chips-official.sample-card',
       sessionNonce: 'session-1',
       requestId,
       requestNonce,
@@ -107,14 +107,34 @@ describe('IframeBridge', () => {
     await expect(requestPromise).resolves.toEqual({ content: 'ok' });
   });
 
-  it('applies language envelope from language-change message', async () => {
+  it('should handle bridge request timeout', async () => {
+    vi.useFakeTimers();
+    dispatchHostMessage(createInitMessage());
+
+    const requestPromise = bridge.invoke('test', 'action').catch(err => err);
+
+    vi.advanceTimersByTime(31000);
+
+    const result = await requestPromise;
+
+    expect(result).toMatchObject({
+      code: 'BRIDGE_TIMEOUT',
+    });
+
+    vi.useRealTimers();
+  });
+
+  it('processes trusted init and language envelope messages', () => {
     const callback = vi.fn();
-    bridge.onLanguageChange(callback);
+    const languageCallback = vi.fn();
+
+    bridge.onInit(callback);
+    bridge.onLanguageChange(languageCallback);
 
     dispatchHostMessage(createInitMessage());
     dispatchHostMessage({
       type: 'language-change',
-      pluginId: 'chips-official.rich-text-card',
+      pluginId: 'chips-official.sample-card',
       sessionNonce: 'session-1',
       i18n: {
         locale: 'ja-JP',
@@ -122,49 +142,100 @@ describe('IframeBridge', () => {
         payload: {
           mode: 'full',
           vocabulary: {
-            'dialog.confirm': '確定',
+            'dialog.confirm': 'Confirm',
           },
         },
       },
     });
 
-    expect(callback).toHaveBeenCalledWith('ja-JP', {
-      'dialog.confirm': '確定',
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(languageCallback).toHaveBeenCalledWith('ja-JP', {
+      'dialog.confirm': 'Confirm',
     });
   });
 
-  it('notifies host with security envelope after init', () => {
-    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
-
+  it('ignores messages from untrusted origin or session', async () => {
+    const callback = vi.fn();
+    bridge.onThemeChange(callback);
     dispatchHostMessage(createInitMessage());
-    bridge.notifyConfigUpdate({ content_text: 'next' });
+
+    dispatchHostMessage(
+      {
+        type: 'theme-change',
+        pluginId: 'chips-official.sample-card',
+        sessionNonce: 'session-1',
+        theme: { css: 'body { color: red; }', tokens: {} },
+      },
+      'https://untrusted.example'
+    );
+
+    dispatchHostMessage({
+      type: 'theme-change',
+      pluginId: 'chips-official.sample-card',
+      sessionNonce: 'session-2',
+      theme: { css: 'body { color: blue; }', tokens: {} },
+    });
+
+    dispatchHostMessage({
+      type: 'theme-change',
+      pluginId: 'chips-official.sample-card',
+      sessionNonce: 'session-1',
+      theme: { css: 'body { color: green; }', tokens: {} },
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ css: 'body { color: green; }', tokens: {} });
+  });
+
+  it('notifies config update with security envelope', () => {
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
+    dispatchHostMessage(createInitMessage());
+
+    const config = { title: 'Updated Title' };
+    bridge.notifyConfigUpdate(config);
 
     expect(postMessageSpy).toHaveBeenCalledWith(
       {
         type: 'config-update',
-        pluginId: 'chips-official.rich-text-card',
+        pluginId: 'chips-official.sample-card',
         sessionNonce: 'session-1',
-        config: { content_text: 'next' },
+        config,
       },
       HOST_ORIGIN
     );
   });
 
-  it('supports persist flag in config update message', () => {
+  it('notifies resize and cancel with security envelope', () => {
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
-
     dispatchHostMessage(createInitMessage());
-    bridge.notifyConfigUpdateWithOptions({ content_text: 'next' }, { persist: true });
 
+    bridge.notifyResize(800, 600);
     expect(postMessageSpy).toHaveBeenCalledWith(
       {
-        type: 'config-update',
-        pluginId: 'chips-official.rich-text-card',
+        type: 'resize',
+        pluginId: 'chips-official.sample-card',
         sessionNonce: 'session-1',
-        config: { content_text: 'next' },
-        persist: true,
+        width: 800,
+        height: 600,
       },
       HOST_ORIGIN
     );
+
+    bridge.notifyCancel();
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      {
+        type: 'editor-cancel',
+        pluginId: 'chips-official.sample-card',
+        sessionNonce: 'session-1',
+      },
+      HOST_ORIGIN
+    );
+  });
+
+  it('should clean up on destroy', () => {
+    const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener');
+    bridge.destroy();
+
+    expect(removeEventListenerSpy).toHaveBeenCalledWith('message', expect.any(Function));
   });
 });

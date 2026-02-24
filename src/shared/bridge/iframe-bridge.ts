@@ -1,3 +1,10 @@
+import {
+  createCardRuntimeNonce,
+  matchesCardRuntimeEnvelope,
+  parseCardRuntimeLanguageEnvelope,
+  toCardRuntimeTargetOrigin,
+  type CardRuntimeEnvelope,
+} from '@chips/sdk/card-runtime';
 import type {
   BridgeRequestMessage,
   BridgeResponseMessage,
@@ -5,7 +12,6 @@ import type {
   InitMessage,
   ThemeChangeMessage,
   LanguageChangeMessage,
-  LanguageEnvelope,
   InboundMessage,
 } from './message-types';
 
@@ -17,7 +23,7 @@ interface PendingRequest {
 }
 
 /**
- * Core iframe bridge for postMessage communication between card and host
+ * Core iframe bridge for postMessage communication between card and host.
  */
 export class IframeBridge {
   private pendingRequests: Map<string, PendingRequest> = new Map();
@@ -28,7 +34,7 @@ export class IframeBridge {
   private pluginId = '';
   private sessionNonce = '';
   private hostOrigin: string | null = null;
-  private hostTargetOrigin: string = '*';
+  private hostTargetOrigin = '*';
 
   private static readonly REQUEST_TIMEOUT = 30000;
 
@@ -38,7 +44,7 @@ export class IframeBridge {
   }
 
   /**
-   * Invoke Bridge API through host proxy
+   * Invoke Bridge API through host proxy.
    */
   async invoke(namespace: string, action: string, params?: Record<string, unknown>): Promise<unknown> {
     if (!this.pluginId || !this.sessionNonce) {
@@ -48,8 +54,8 @@ export class IframeBridge {
       });
     }
 
-    const requestId = crypto.randomUUID();
-    const requestNonce = crypto.randomUUID();
+    const requestId = createCardRuntimeNonce();
+    const requestNonce = createCardRuntimeNonce();
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -80,28 +86,28 @@ export class IframeBridge {
   }
 
   /**
-   * Register initialization callback
+   * Register initialization callback.
    */
   onInit(callback: (payload: InitMessage['payload']) => void): void {
     this.initCallback = callback;
   }
 
   /**
-   * Register theme change callback
+   * Register theme change callback.
    */
   onThemeChange(callback: (theme: ThemeChangeMessage['theme']) => void): void {
     this.themeChangeCallback = callback;
   }
 
   /**
-   * Register language change callback
+   * Register language change callback.
    */
   onLanguageChange(callback: (locale: string, vocabulary: Record<string, string>) => void): void {
     this.languageChangeCallback = callback;
   }
 
   /**
-   * Notify host that configuration has been updated
+   * Notify host that configuration has been updated.
    */
   notifyConfigUpdate(config: Record<string, unknown>): void {
     this.notifyConfigUpdateWithOptions(config);
@@ -128,7 +134,7 @@ export class IframeBridge {
   }
 
   /**
-   * Notify host of size change
+   * Notify host of size change.
    */
   notifyResize(width: number, height: number): void {
     if (!this.pluginId || !this.sessionNonce) {
@@ -148,7 +154,7 @@ export class IframeBridge {
   }
 
   /**
-   * Notify host that editor was cancelled
+   * Notify host that editor was cancelled.
    */
   notifyCancel(): void {
     if (!this.pluginId || !this.sessionNonce) {
@@ -180,11 +186,11 @@ export class IframeBridge {
         return;
       }
 
-      const dataRecord = data as unknown as Record<string, unknown>;
-      if (
-        typeof dataRecord.sessionNonce !== 'string'
-        || dataRecord.sessionNonce !== this.sessionNonce
-      ) {
+      const expected: CardRuntimeEnvelope = {
+        pluginId: this.pluginId,
+        sessionNonce: this.sessionNonce,
+      };
+      if (!matchesCardRuntimeEnvelope(data, expected)) {
         return;
       }
     }
@@ -200,8 +206,7 @@ export class IframeBridge {
         this.themeChangeCallback?.((data as ThemeChangeMessage).theme);
         break;
       case 'language-change': {
-        const langMsg = data as LanguageChangeMessage;
-        const parsedLanguage = this.parseLanguageEnvelope(langMsg);
+        const parsedLanguage = parseCardRuntimeLanguageEnvelope(data as LanguageChangeMessage);
         if (!parsedLanguage) {
           return;
         }
@@ -218,18 +223,18 @@ export class IframeBridge {
     }
 
     if (
-      typeof bridgeContext.pluginId !== 'string'
-      || typeof bridgeContext.sessionNonce !== 'string'
-      || bridgeContext.pluginId.length === 0
-      || bridgeContext.sessionNonce.length === 0
+      typeof bridgeContext.pluginId !== 'string' ||
+      typeof bridgeContext.sessionNonce !== 'string' ||
+      bridgeContext.pluginId.length === 0 ||
+      bridgeContext.sessionNonce.length === 0
     ) {
       return;
     }
 
     if (
-      bridgeContext.trustedOrigin
-      && typeof bridgeContext.trustedOrigin === 'string'
-      && bridgeContext.trustedOrigin !== origin
+      bridgeContext.trustedOrigin &&
+      typeof bridgeContext.trustedOrigin === 'string' &&
+      bridgeContext.trustedOrigin !== origin
     ) {
       return;
     }
@@ -237,80 +242,19 @@ export class IframeBridge {
     this.pluginId = bridgeContext.pluginId;
     this.sessionNonce = bridgeContext.sessionNonce;
     this.hostOrigin = origin;
-    this.hostTargetOrigin = origin === 'null' ? '*' : origin;
+    this.hostTargetOrigin = toCardRuntimeTargetOrigin(origin);
 
     this.initCallback?.(message.payload);
 
-    const initialLanguage = this.parseLanguageEnvelope({
-      type: 'language-change',
+    const initialLanguage = parseCardRuntimeLanguageEnvelope({
       i18n: message.payload.i18n,
       locale: message.payload.locale,
       vocabulary: message.payload.vocabulary,
       vocabularyVersion: message.payload.vocabularyVersion,
-      pluginId: bridgeContext.pluginId,
-      sessionNonce: bridgeContext.sessionNonce,
     });
     if (initialLanguage) {
       this.languageChangeCallback?.(initialLanguage.locale, initialLanguage.payload.vocabulary);
     }
-  }
-
-  private parseLanguageEnvelope(message: LanguageChangeMessage): LanguageEnvelope | null {
-    if (message.i18n) {
-      const locale = message.i18n.locale;
-      const version = message.i18n.version;
-      const payload = message.i18n.payload;
-      const vocabulary = this.toStringRecord(payload?.vocabulary);
-      if (
-        typeof locale === 'string'
-        && typeof version === 'string'
-        && payload
-        && payload.mode === 'full'
-        && vocabulary
-      ) {
-        return {
-          locale,
-          version,
-          payload: {
-            mode: 'full',
-            vocabulary,
-          },
-        };
-      }
-      return null;
-    }
-
-    const legacyVocabulary = this.toStringRecord(message.vocabulary);
-    if (
-      typeof message.locale === 'string'
-      && legacyVocabulary
-    ) {
-      return {
-        locale: message.locale,
-        version: message.vocabularyVersion ?? 'legacy',
-        payload: {
-          mode: 'full',
-          vocabulary: legacyVocabulary,
-        },
-      };
-    }
-
-    return null;
-  }
-
-  private toStringRecord(value: unknown): Record<string, string> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-
-    const result: Record<string, string> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof item !== 'string') {
-        return null;
-      }
-      result[key] = item;
-    }
-    return result;
   }
 
   private handleBridgeResponse(data: BridgeResponseMessage): void {
@@ -323,12 +267,11 @@ export class IframeBridge {
     }
 
     const pending = this.pendingRequests.get(data.requestId);
-    if (!pending) return;
+    if (!pending) {
+      return;
+    }
 
-    if (
-      typeof data.requestNonce === 'string'
-      && data.requestNonce !== pending.requestNonce
-    ) {
+    if (typeof data.requestNonce === 'string' && data.requestNonce !== pending.requestNonce) {
       return;
     }
 
@@ -343,7 +286,7 @@ export class IframeBridge {
   }
 
   /**
-   * Destroy the bridge and clean up all resources
+   * Destroy the bridge and clean up all resources.
    */
   destroy(): void {
     window.removeEventListener('message', this.messageHandler);

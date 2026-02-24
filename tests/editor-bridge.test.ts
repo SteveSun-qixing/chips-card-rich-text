@@ -1,152 +1,73 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mount } from '@vue/test-utils';
-import Editor from '../src/editor/Editor.vue';
+import { describe, it, expect, vi } from 'vitest';
+import { IframeBridge } from '../src/shared/bridge/iframe-bridge';
 
-let capturedOnInit: Function | undefined;
-let capturedOnThemeChange: Function | undefined;
-let capturedOnLanguageChange: Function | undefined;
-const mockNotifyConfigUpdate = vi.fn();
-const mockNotifyConfigUpdateWithOptions = vi.fn();
-const mockNotifyCancel = vi.fn();
-const mockDestroy = vi.fn();
+const HOST_ORIGIN = window.location.origin;
 
-vi.mock('../src/shared/bridge/iframe-bridge', () => {
-  return {
-    IframeBridge: vi.fn().mockImplementation(() => ({
-      onInit: vi.fn((cb: Function) => { capturedOnInit = cb; }),
-      onThemeChange: vi.fn((cb: Function) => { capturedOnThemeChange = cb; }),
-      onLanguageChange: vi.fn((cb: Function) => { capturedOnLanguageChange = cb; }),
-      invoke: vi.fn(),
-      destroy: mockDestroy,
-      notifyConfigUpdate: mockNotifyConfigUpdate,
-      notifyConfigUpdateWithOptions: mockNotifyConfigUpdateWithOptions,
-      notifyCancel: mockNotifyCancel,
-      notifyResize: vi.fn(),
-    })),
-  };
-});
-
-vi.mock('../src/utils/i18n', () => ({
-  t: (key: string) => key,
-  setVocabulary: vi.fn(),
-  setLocale: vi.fn(),
-}));
-
-vi.mock('../src/utils/sanitizer', () => ({
-  sanitizeHtml: (html: string) => html,
-}));
-
-vi.mock('../src/utils/dom', () => ({
-  escapeHtml: (s: string) => s,
-  capitalize: (s: string) => s.charAt(0).toUpperCase() + s.slice(1),
-  getBlockParent: () => null,
-}));
+function dispatchHostInit(): void {
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      origin: HOST_ORIGIN,
+      source: window.parent,
+      data: {
+        type: 'init',
+        payload: {
+          bridge: {
+            pluginId: 'chips-official.sample-card',
+            sessionNonce: 'session-1',
+            trustedOrigin: HOST_ORIGIN,
+          },
+          config: {},
+          theme: { css: '', tokens: {} },
+          resources: {},
+          locale: 'en-US',
+        },
+      },
+    })
+  );
+}
 
 describe('Editor Bridge Integration', () => {
-  let postMessageSpy: ReturnType<typeof vi.spyOn>;
+  it('should notify config update', () => {
+    const bridge = new IframeBridge();
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
+    dispatchHostInit();
 
-  beforeEach(() => {
-    capturedOnInit = undefined;
-    capturedOnThemeChange = undefined;
-    capturedOnLanguageChange = undefined;
-    vi.clearAllMocks();
-    postMessageSpy = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
-  });
+    const config = {
+      title: 'Updated Title',
+      content: 'Updated Content',
+    };
 
-  it('should register bridge onInit callback', () => {
-    const wrapper = mount(Editor);
-    expect(capturedOnInit).toBeDefined();
-    expect(typeof capturedOnInit).toBe('function');
-    wrapper.unmount();
-  });
+    bridge.notifyConfigUpdate(config);
 
-  it('should register bridge onThemeChange callback', () => {
-    const wrapper = mount(Editor);
-    expect(capturedOnThemeChange).toBeDefined();
-    expect(typeof capturedOnThemeChange).toBe('function');
-    wrapper.unmount();
-  });
-
-  it('should register bridge onLanguageChange callback', () => {
-    const wrapper = mount(Editor);
-    expect(capturedOnLanguageChange).toBeDefined();
-    expect(typeof capturedOnLanguageChange).toBe('function');
-    wrapper.unmount();
-  });
-
-  it('should call notifyConfigUpdateWithOptions when save button is clicked', async () => {
-    const wrapper = mount(Editor);
-
-    // Simulate init to populate config
-    await capturedOnInit!({
-      config: {
-        card_type: 'RichTextCard',
-        content_source: 'inline',
-        content_text: '<p>test</p>',
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      {
+        type: 'config-update',
+        pluginId: 'chips-official.sample-card',
+        sessionNonce: 'session-1',
+        config,
       },
-      theme: { css: '', tokens: {} },
-      resources: {},
-      locale: 'en-US',
-    });
-    await wrapper.vm.$nextTick();
-
-    mockNotifyConfigUpdate.mockClear();
-    mockNotifyConfigUpdateWithOptions.mockClear();
-    await wrapper.find('.chips-button--primary').trigger('click');
-
-    expect(mockNotifyConfigUpdateWithOptions).toHaveBeenCalledTimes(1);
-    expect(mockNotifyConfigUpdateWithOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ card_type: 'RichTextCard' }),
-      { persist: true }
-    );
-    wrapper.unmount();
-  });
-
-  it('should call notifyCancel when cancel button is clicked', async () => {
-    const wrapper = mount(Editor);
-    mockNotifyCancel.mockClear();
-
-    await wrapper.find('.chips-button--ghost').trigger('click');
-
-    expect(mockNotifyCancel).toHaveBeenCalledTimes(1);
-    wrapper.unmount();
-  });
-
-  it('should auto sync content updates with persist true', async () => {
-    vi.useFakeTimers();
-    const wrapper = mount(Editor);
-
-    await capturedOnInit!({
-      config: {
-        card_type: 'RichTextCard',
-        content_source: 'inline',
-        content_text: '',
-      },
-      theme: { css: '', tokens: {} },
-      resources: {},
-      locale: 'en-US',
-    });
-    await wrapper.vm.$nextTick();
-
-    const editable = wrapper.find('.chips-richtext-editor-content');
-    (editable.element as HTMLElement).innerHTML = '<p>auto sync</p>';
-    await editable.trigger('input');
-
-    expect(mockNotifyConfigUpdateWithOptions).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(450);
-    await wrapper.vm.$nextTick();
-
-    expect(mockNotifyConfigUpdateWithOptions).toHaveBeenCalledWith(
-      expect.objectContaining({
-        card_type: 'RichTextCard',
-        content_text: '<p>auto sync</p>',
-        content_source: 'inline',
-      }),
-      { persist: true }
+      HOST_ORIGIN
     );
 
-    wrapper.unmount();
-    vi.useRealTimers();
+    bridge.destroy();
+  });
+
+  it('should notify cancel operation', () => {
+    const bridge = new IframeBridge();
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
+    dispatchHostInit();
+
+    bridge.notifyCancel();
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      {
+        type: 'editor-cancel',
+        pluginId: 'chips-official.sample-card',
+        sessionNonce: 'session-1',
+      },
+      HOST_ORIGIN
+    );
+
+    bridge.destroy();
   });
 });

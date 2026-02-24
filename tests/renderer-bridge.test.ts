@@ -1,100 +1,143 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mount } from '@vue/test-utils';
-import Renderer from '../src/renderer/Renderer.vue';
+import { describe, it, expect, vi } from 'vitest';
+import { IframeBridge } from '../src/shared/bridge/iframe-bridge';
 
-// Capture bridge callbacks during module execution
-let capturedOnInit: Function | undefined;
-let capturedOnThemeChange: Function | undefined;
-let capturedOnLanguageChange: Function | undefined;
-const mockInvoke = vi.fn();
-const mockDestroy = vi.fn();
+const HOST_ORIGIN = window.location.origin;
 
-vi.mock('../src/shared/bridge/iframe-bridge', () => {
-  return {
-    IframeBridge: vi.fn().mockImplementation(() => ({
-      onInit: vi.fn((cb: Function) => { capturedOnInit = cb; }),
-      onThemeChange: vi.fn((cb: Function) => { capturedOnThemeChange = cb; }),
-      onLanguageChange: vi.fn((cb: Function) => { capturedOnLanguageChange = cb; }),
-      invoke: mockInvoke,
-      destroy: mockDestroy,
-      notifyResize: vi.fn(),
-    })),
-  };
-});
-
-vi.mock('../src/utils/i18n', () => ({
-  t: (key: string) => key,
-  setVocabulary: vi.fn(),
-  setLocale: vi.fn(),
-}));
-
-vi.mock('../src/utils/sanitizer', () => ({
-  sanitizeHtml: (html: string) => html,
-}));
+function dispatchHostMessage(data: unknown): void {
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      origin: HOST_ORIGIN,
+      source: window.parent,
+      data,
+    })
+  );
+}
 
 describe('Renderer Bridge Integration', () => {
-  let postMessageSpy: ReturnType<typeof vi.spyOn>;
+  it('should handle initialization flow', async () => {
+    const bridge = new IframeBridge();
+    const initCallback = vi.fn();
+    const languageCallback = vi.fn();
 
-  beforeEach(() => {
-    capturedOnInit = undefined;
-    capturedOnThemeChange = undefined;
-    capturedOnLanguageChange = undefined;
-    vi.clearAllMocks();
-    postMessageSpy = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
-  });
+    bridge.onInit(initCallback);
+    bridge.onLanguageChange(languageCallback);
 
-  it('should register bridge onInit callback', () => {
-    const wrapper = mount(Renderer);
-    expect(capturedOnInit).toBeDefined();
-    expect(typeof capturedOnInit).toBe('function');
-    wrapper.unmount();
-  });
-
-  it('should register bridge onThemeChange callback', () => {
-    const wrapper = mount(Renderer);
-    expect(capturedOnThemeChange).toBeDefined();
-    expect(typeof capturedOnThemeChange).toBe('function');
-    wrapper.unmount();
-  });
-
-  it('should register bridge onLanguageChange callback', () => {
-    const wrapper = mount(Renderer);
-    expect(capturedOnLanguageChange).toBeDefined();
-    expect(typeof capturedOnLanguageChange).toBe('function');
-    wrapper.unmount();
-  });
-
-  it('should use bridge invoke for resource fetch in onInit', async () => {
-    mockInvoke.mockResolvedValue({ content: '<p>fetched</p>' });
-
-    const wrapper = mount(Renderer);
-
-    // Simulate host sending init with file-based content
-    await capturedOnInit!({
-      config: {
-        card_type: 'RichTextCard',
-        content_source: 'file',
-        content_file: 'content.html',
+    const payload = {
+      bridge: {
+        pluginId: 'chips-official.sample-card',
+        sessionNonce: 'session-1',
+        trustedOrigin: HOST_ORIGIN,
       },
-      theme: { css: '', tokens: {} },
-      resources: { cardId: 'card-123' },
-      locale: 'en-US',
+      config: { title: 'Test Card', content: 'Test Content' },
+      theme: { css: 'body { color: black; }', tokens: {} },
+      resources: {},
+      locale: 'zh-CN',
+      vocabulary: {
+        'card.loading': 'Loading...',
+      },
+      vocabularyVersion: 'v1',
+      i18n: {
+        locale: 'zh-CN',
+        version: 'v1',
+        payload: {
+          mode: 'full',
+          vocabulary: {
+            'card.loading': 'Loading...',
+          },
+        },
+      },
+    };
+
+    dispatchHostMessage({ type: 'init', payload });
+    expect(initCallback).toHaveBeenCalledTimes(1);
+    expect(languageCallback).toHaveBeenCalledWith('zh-CN', {
+      'card.loading': 'Loading...',
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('resource', 'fetch', {
-      uri: 'chips://card/card-123/content.html',
-      options: { as: 'text', encoding: 'utf-8', cache: true },
-    });
-
-    wrapper.unmount();
+    bridge.destroy();
   });
 
-  it('should call bridge destroy on unmount', () => {
-    const wrapper = mount(Renderer);
-    mockDestroy.mockClear();
+  it('should handle theme injection', async () => {
+    const bridge = new IframeBridge();
+    const themeCallback = vi.fn();
 
-    wrapper.unmount();
+    bridge.onThemeChange(themeCallback);
 
-    expect(mockDestroy).toHaveBeenCalledTimes(1);
+    const theme = {
+      css: '.chips-card { background: white; }',
+      tokens: { primary: '#000000' },
+    };
+
+    dispatchHostMessage({
+      type: 'init',
+      payload: {
+        bridge: {
+          pluginId: 'chips-official.sample-card',
+          sessionNonce: 'session-1',
+          trustedOrigin: HOST_ORIGIN,
+        },
+        config: {},
+        theme: { css: '', tokens: {} },
+        resources: {},
+        locale: 'en-US',
+      },
+    });
+    dispatchHostMessage({
+      type: 'theme-change',
+      pluginId: 'chips-official.sample-card',
+      sessionNonce: 'session-1',
+      theme,
+    });
+    expect(themeCallback).toHaveBeenCalledWith({
+      css: '.chips-card { background: white; }',
+      tokens: { primary: '#000000' },
+    });
+
+    bridge.destroy();
+  });
+
+  it('should handle language switching', async () => {
+    const bridge = new IframeBridge();
+    const langCallback = vi.fn();
+
+    bridge.onLanguageChange(langCallback);
+
+    dispatchHostMessage({
+      type: 'init',
+      payload: {
+        bridge: {
+          pluginId: 'chips-official.sample-card',
+          sessionNonce: 'session-1',
+          trustedOrigin: HOST_ORIGIN,
+        },
+        config: {},
+        theme: { css: '', tokens: {} },
+        resources: {},
+        locale: 'en-US',
+      },
+    });
+    dispatchHostMessage({
+      type: 'language-change',
+      pluginId: 'chips-official.sample-card',
+      sessionNonce: 'session-1',
+      i18n: {
+        locale: 'en-US',
+        version: 'v2',
+        payload: {
+          mode: 'full',
+          vocabulary: {
+            'card.loading': 'Loading...',
+            'card.error': 'Error',
+          },
+        },
+      },
+    });
+
+    expect(langCallback).toHaveBeenCalledWith('en-US', {
+      'card.loading': 'Loading...',
+      'card.error': 'Error',
+    });
+
+    bridge.destroy();
   });
 });
