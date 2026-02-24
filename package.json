@@ -33,6 +33,7 @@
     "vue-tsc": "^3.2.5"
   },
   "dependencies": {
+    "@chips/sdk": "file:../../Chips-SDK",
     "vue": "^3.4.15"
   }
 }
