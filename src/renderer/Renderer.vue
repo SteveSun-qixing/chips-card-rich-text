@@ -73,9 +73,9 @@ const processedContent = computed(() => {
 });
 
 /**
- * Build resource URI from a path
+ * Build resource identifier from a path
  */
-function buildResourceUri(path: string, cardId: string): string {
+function buildResourceIdentifier(path: string, cardId: string): string {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return `chips://network/${path}`;
   }
@@ -97,14 +97,19 @@ async function loadContent(cfg: RichTextCardConfig, resources: Record<string, st
 
   if (cfg.content_source === 'file' && cfg.content_file) {
     const cardId = resources['cardId'] || '';
-    const uri = buildResourceUri(cfg.content_file, cardId);
+    const identifier = buildResourceIdentifier(cfg.content_file, cardId);
 
     const response = await bridge.invoke('resource', 'fetch', {
-      uri,
-      options: { as: 'text', encoding: 'utf-8', cache: true },
-    }) as { content: string };
+      identifier,
+      responseType: 'text',
+      useCache: true,
+    }) as { data?: string } | string;
 
-    return response?.content || '';
+    if (typeof response === 'string') {
+      return response;
+    }
+
+    return typeof response?.data === 'string' ? response.data : '';
   }
 
   return '';

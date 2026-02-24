@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import Editor from '../src/editor/Editor.vue';
 
+let capturedOnInit: ((payload: any) => void | Promise<void>) | undefined;
+const mockInvoke = vi.fn();
+
 vi.mock('../src/shared/bridge/iframe-bridge', () => {
   return {
     IframeBridge: vi.fn().mockImplementation(() => ({
-      onInit: vi.fn(),
+      onInit: vi.fn((cb: (payload: any) => void | Promise<void>) => {
+        capturedOnInit = cb;
+      }),
       onThemeChange: vi.fn(),
       onLanguageChange: vi.fn(),
-      invoke: vi.fn(),
+      invoke: mockInvoke,
       destroy: vi.fn(),
       notifyConfigUpdate: vi.fn(),
       notifyCancel: vi.fn(),
@@ -37,7 +42,9 @@ describe('Editor Component', () => {
   let postMessageSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    capturedOnInit = undefined;
     vi.clearAllMocks();
+    mockInvoke.mockReset();
     postMessageSpy = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
   });
 
@@ -86,6 +93,31 @@ describe('Editor Component', () => {
   it('should render the actions area', () => {
     const wrapper = mount(Editor);
     expect(wrapper.find('.chips-card-editor__actions').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('should load file content via resource.fetch using host schema', async () => {
+    mockInvoke.mockResolvedValueOnce({ data: '<p>File content</p>' });
+    const wrapper = mount(Editor);
+
+    await capturedOnInit?.({
+      config: {
+        card_type: 'RichTextCard',
+        content_source: 'file',
+        content_file: 'content/file.html',
+      },
+      theme: { css: '', tokens: {} },
+      resources: { cardId: 'card-1' },
+      locale: 'en-US',
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(mockInvoke).toHaveBeenCalledWith('resource', 'fetch', {
+      identifier: 'chips://card/card-1/content/file.html',
+      responseType: 'text',
+      useCache: true,
+    });
+
     wrapper.unmount();
   });
 });
