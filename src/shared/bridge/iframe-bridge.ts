@@ -1,3 +1,11 @@
+import {
+  createCardRuntimeMessage,
+  createCardRuntimeNonce,
+  isCardRuntimeMessage,
+  isCardRuntimeMessageType,
+  parseCardRuntimeLanguageEnvelope,
+  toCardRuntimeTargetOrigin,
+} from '@chips/sdk/card-runtime';
 import type {
   BridgeRequestMessage,
   BridgeResponseMessage,
@@ -5,7 +13,6 @@ import type {
   InitMessage,
   ThemeChangeMessage,
   LanguageChangeMessage,
-  LanguageEnvelope,
   InboundMessage,
 } from './message-types';
 
@@ -16,30 +23,28 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
-/**
- * Core iframe bridge for postMessage communication between card and host
- */
 export class IframeBridge {
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private messageHandler: (event: MessageEvent) => void;
   private initCallback?: (payload: InitMessage['payload']) => void;
-  private themeChangeCallback?: (theme: ThemeChangeMessage['theme']) => void;
+  private themeChangeCallback?: (theme: ThemeChangeMessage['payload']['theme']) => void;
   private languageChangeCallback?: (locale: string, vocabulary: Record<string, string>) => void;
   private pluginId = '';
   private sessionNonce = '';
   private hostOrigin: string | null = null;
-  private hostTargetOrigin: string = '*';
+  private hostTargetOrigin = '*';
+  private readySent = false;
 
   private static readonly REQUEST_TIMEOUT = 30000;
 
   constructor() {
     this.messageHandler = this.handleMessage.bind(this);
     window.addEventListener('message', this.messageHandler);
+    queueMicrotask(() => {
+      this.notifyReady();
+    });
   }
 
-  /**
-   * Invoke Bridge API through host proxy
-   */
   async invoke(namespace: string, action: string, params?: Record<string, unknown>): Promise<unknown> {
     if (!this.pluginId || !this.sessionNonce) {
       return Promise.reject({
@@ -48,8 +53,8 @@ export class IframeBridge {
       });
     }
 
-    const requestId = crypto.randomUUID();
-    const requestNonce = crypto.randomUUID();
+    const requestId = createCardRuntimeNonce();
+    const requestNonce = createCardRuntimeNonce();
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -64,45 +69,30 @@ export class IframeBridge {
 
       this.pendingRequests.set(requestId, { requestNonce, resolve, reject, timer });
 
-      const message: BridgeRequestMessage = {
-        type: 'bridge-request',
-        pluginId: this.pluginId,
-        sessionNonce: this.sessionNonce,
-        requestNonce,
+      const message: BridgeRequestMessage = createCardRuntimeMessage('bridge-request', {
         requestId,
+        requestNonce,
         namespace,
         action,
         params,
-      };
+      });
 
       window.parent.postMessage(message, this.hostTargetOrigin);
     });
   }
 
-  /**
-   * Register initialization callback
-   */
   onInit(callback: (payload: InitMessage['payload']) => void): void {
     this.initCallback = callback;
   }
 
-  /**
-   * Register theme change callback
-   */
-  onThemeChange(callback: (theme: ThemeChangeMessage['theme']) => void): void {
+  onThemeChange(callback: (theme: ThemeChangeMessage['payload']['theme']) => void): void {
     this.themeChangeCallback = callback;
   }
 
-  /**
-   * Register language change callback
-   */
   onLanguageChange(callback: (locale: string, vocabulary: Record<string, string>) => void): void {
     this.languageChangeCallback = callback;
   }
 
-  /**
-   * Notify host that configuration has been updated
-   */
   notifyConfigUpdate(config: Record<string, unknown>): void {
     this.notifyConfigUpdateWithOptions(config);
   }
@@ -116,52 +106,51 @@ export class IframeBridge {
     }
 
     window.parent.postMessage(
-      {
-        type: 'config-update',
-        pluginId: this.pluginId,
-        sessionNonce: this.sessionNonce,
+      createCardRuntimeMessage('config-update', {
         config,
         ...(options?.persist === true ? { persist: true } : {}),
-      },
-      this.hostTargetOrigin
+      }),
+      this.hostTargetOrigin,
     );
   }
 
-  /**
-   * Notify host of size change
-   */
   notifyResize(width: number, height: number): void {
     if (!this.pluginId || !this.sessionNonce) {
       return;
     }
 
     window.parent.postMessage(
-      {
-        type: 'resize',
-        pluginId: this.pluginId,
-        sessionNonce: this.sessionNonce,
+      createCardRuntimeMessage('resize', {
         width,
         height,
-      },
-      this.hostTargetOrigin
+      }),
+      this.hostTargetOrigin,
     );
   }
 
-  /**
-   * Notify host that editor was cancelled
-   */
   notifyCancel(): void {
     if (!this.pluginId || !this.sessionNonce) {
       return;
     }
 
     window.parent.postMessage(
-      {
-        type: 'editor-cancel',
-        pluginId: this.pluginId,
-        sessionNonce: this.sessionNonce,
-      },
-      this.hostTargetOrigin
+      createCardRuntimeMessage('editor-cancel', {}),
+      this.hostTargetOrigin,
+    );
+  }
+
+  private notifyReady(): void {
+    if (this.readySent || this.hostOrigin) {
+      return;
+    }
+
+    this.readySent = true;
+    window.parent.postMessage(
+      createCardRuntimeMessage('ready', {
+        mode: 'renderer',
+        protocolVersion: '1.0.0',
+      }),
+      '*',
     );
   }
 
@@ -171,20 +160,12 @@ export class IframeBridge {
     }
 
     const data = event.data as InboundMessage;
-    if (!data || typeof data !== 'object' || !('type' in data)) {
+    if (!isCardRuntimeMessage(data)) {
       return;
     }
 
     if (data.type !== 'init') {
       if (!this.hostOrigin || event.origin !== this.hostOrigin) {
-        return;
-      }
-
-      const dataRecord = data as unknown as Record<string, unknown>;
-      if (
-        typeof dataRecord.sessionNonce !== 'string'
-        || dataRecord.sessionNonce !== this.sessionNonce
-      ) {
         return;
       }
     }
@@ -197,17 +178,18 @@ export class IframeBridge {
         this.handleInit(event.origin, data as InitMessage);
         break;
       case 'theme-change':
-        this.themeChangeCallback?.((data as ThemeChangeMessage).theme);
+        this.themeChangeCallback?.((data as ThemeChangeMessage).payload.theme);
         break;
       case 'language-change': {
-        const langMsg = data as LanguageChangeMessage;
-        const parsedLanguage = this.parseLanguageEnvelope(langMsg);
+        const parsedLanguage = parseCardRuntimeLanguageEnvelope((data as LanguageChangeMessage).payload);
         if (!parsedLanguage) {
           return;
         }
         this.languageChangeCallback?.(parsedLanguage.locale, parsedLanguage.payload.vocabulary);
         break;
       }
+      default:
+        break;
     }
   }
 
@@ -218,18 +200,18 @@ export class IframeBridge {
     }
 
     if (
-      typeof bridgeContext.pluginId !== 'string'
-      || typeof bridgeContext.sessionNonce !== 'string'
-      || bridgeContext.pluginId.length === 0
-      || bridgeContext.sessionNonce.length === 0
+      typeof bridgeContext.pluginId !== 'string' ||
+      typeof bridgeContext.sessionNonce !== 'string' ||
+      bridgeContext.pluginId.length === 0 ||
+      bridgeContext.sessionNonce.length === 0
     ) {
       return;
     }
 
     if (
-      bridgeContext.trustedOrigin
-      && typeof bridgeContext.trustedOrigin === 'string'
-      && bridgeContext.trustedOrigin !== origin
+      bridgeContext.trustedOrigin &&
+      typeof bridgeContext.trustedOrigin === 'string' &&
+      bridgeContext.trustedOrigin !== origin
     ) {
       return;
     }
@@ -237,114 +219,46 @@ export class IframeBridge {
     this.pluginId = bridgeContext.pluginId;
     this.sessionNonce = bridgeContext.sessionNonce;
     this.hostOrigin = origin;
-    this.hostTargetOrigin = origin === 'null' ? '*' : origin;
+    this.hostTargetOrigin = toCardRuntimeTargetOrigin(origin);
 
     this.initCallback?.(message.payload);
 
-    const initialLanguage = this.parseLanguageEnvelope({
-      type: 'language-change',
+    const initialLanguage = parseCardRuntimeLanguageEnvelope({
       i18n: message.payload.i18n,
       locale: message.payload.locale,
       vocabulary: message.payload.vocabulary,
       vocabularyVersion: message.payload.vocabularyVersion,
-      pluginId: bridgeContext.pluginId,
-      sessionNonce: bridgeContext.sessionNonce,
     });
     if (initialLanguage) {
       this.languageChangeCallback?.(initialLanguage.locale, initialLanguage.payload.vocabulary);
     }
   }
 
-  private parseLanguageEnvelope(message: LanguageChangeMessage): LanguageEnvelope | null {
-    if (message.i18n) {
-      const locale = message.i18n.locale;
-      const version = message.i18n.version;
-      const payload = message.i18n.payload;
-      const vocabulary = this.toStringRecord(payload?.vocabulary);
-      if (
-        typeof locale === 'string'
-        && typeof version === 'string'
-        && payload
-        && payload.mode === 'full'
-        && vocabulary
-      ) {
-        return {
-          locale,
-          version,
-          payload: {
-            mode: 'full',
-            vocabulary,
-          },
-        };
-      }
-      return null;
-    }
-
-    const legacyVocabulary = this.toStringRecord(message.vocabulary);
-    if (
-      typeof message.locale === 'string'
-      && legacyVocabulary
-    ) {
-      return {
-        locale: message.locale,
-        version: message.vocabularyVersion ?? 'legacy',
-        payload: {
-          mode: 'full',
-          vocabulary: legacyVocabulary,
-        },
-      };
-    }
-
-    return null;
-  }
-
-  private toStringRecord(value: unknown): Record<string, string> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-
-    const result: Record<string, string> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof item !== 'string') {
-        return null;
-      }
-      result[key] = item;
-    }
-    return result;
-  }
-
-  private handleBridgeResponse(data: BridgeResponseMessage): void {
-    if (this.pluginId && data.pluginId && data.pluginId !== this.pluginId) {
+  private handleBridgeResponse(message: BridgeResponseMessage): void {
+    if (!isCardRuntimeMessageType(message, 'bridge-response')) {
       return;
     }
 
-    if (this.sessionNonce && data.sessionNonce && data.sessionNonce !== this.sessionNonce) {
+    const payload = message.payload;
+    const pending = this.pendingRequests.get(payload.requestId);
+    if (!pending) {
       return;
     }
 
-    const pending = this.pendingRequests.get(data.requestId);
-    if (!pending) return;
-
-    if (
-      typeof data.requestNonce === 'string'
-      && data.requestNonce !== pending.requestNonce
-    ) {
+    if (typeof payload.requestNonce === 'string' && payload.requestNonce !== pending.requestNonce) {
       return;
     }
 
     clearTimeout(pending.timer);
-    this.pendingRequests.delete(data.requestId);
+    this.pendingRequests.delete(payload.requestId);
 
-    if (data.error) {
-      pending.reject(data.error);
+    if (payload.success === false || payload.error) {
+      pending.reject(payload.error ?? { code: 'BRIDGE_INVOKE_FAILED', message: 'Bridge invoke failed' });
     } else {
-      pending.resolve(data.result);
+      pending.resolve(payload.data);
     }
   }
 
-  /**
-   * Destroy the bridge and clean up all resources
-   */
   destroy(): void {
     window.removeEventListener('message', this.messageHandler);
     for (const [, pending] of this.pendingRequests) {
@@ -356,5 +270,6 @@ export class IframeBridge {
     this.sessionNonce = '';
     this.hostOrigin = null;
     this.hostTargetOrigin = '*';
+    this.readySent = false;
   }
 }

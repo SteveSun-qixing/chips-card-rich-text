@@ -72,6 +72,12 @@ describe('Renderer Component', () => {
     });
     await wrapper.vm.$nextTick();
 
+    expect(mockInvoke).toHaveBeenCalledWith('resource', 'fetch', {
+      identifier: 'chips://card/card-1/missing.html',
+      responseType: 'text',
+      useCache: true,
+    });
+
     expect(wrapper.find('.chips-card-error').exists()).toBe(true);
     expect(wrapper.find('.chips-card-error__message').text()).toBe('Load failed');
     expect(wrapper.find('.chips-card-loading').exists()).toBe(false);
@@ -96,6 +102,31 @@ describe('Renderer Component', () => {
     const content = wrapper.find('.chips-richtext-content');
     expect(content.exists()).toBe(true);
     expect(content.html()).toContain('Hello World');
+    wrapper.unmount();
+  });
+
+  it('should load file content via resource.fetch using host schema', async () => {
+    mockInvoke.mockResolvedValueOnce({ data: '<p>Loaded from file</p>' });
+    const wrapper = mount(Renderer);
+
+    await capturedOnInit!({
+      config: {
+        card_type: 'RichTextCard',
+        content_source: 'file',
+        content_file: 'content/body.html',
+      },
+      theme: { css: '', tokens: {} },
+      resources: { cardId: 'card-1' },
+      locale: 'en-US',
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(mockInvoke).toHaveBeenCalledWith('resource', 'fetch', {
+      identifier: 'chips://card/card-1/content/body.html',
+      responseType: 'text',
+      useCache: true,
+    });
+    expect(wrapper.find('.chips-richtext-content').html()).toContain('Loaded from file');
     wrapper.unmount();
   });
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createCardRuntimeMessage } from '@chips/sdk/card-runtime';
 import type {
   BridgeRequestMessage,
   BridgeResponseMessage,
@@ -7,114 +8,117 @@ import type {
   ResizeMessage,
   ThemeChangeMessage,
   LanguageChangeMessage,
+  ReadyMessage,
 } from '../src/shared/bridge/message-types';
 
 describe('Message Types', () => {
-  it('should validate BridgeRequestMessage structure', () => {
-    const message: BridgeRequestMessage = {
-      type: 'bridge-request',
-      pluginId: 'chips-official.rich-text-card',
-      sessionNonce: 'session-1',
+  it('validates ReadyMessage structure', () => {
+    const message: ReadyMessage = createCardRuntimeMessage('ready', {
+      mode: 'renderer',
+      protocolVersion: '1.0.0',
+    });
+
+    expect(message.type).toBe('ready');
+    expect(message.protocol).toBe('chips-card-runtime');
+  });
+
+  it('validates BridgeRequestMessage structure', () => {
+    const message: BridgeRequestMessage = createCardRuntimeMessage('bridge-request', {
       requestNonce: 'request-nonce-1',
       requestId: 'test-id',
       namespace: 'test',
       action: 'action',
       params: { key: 'value' },
-    };
+    });
 
     expect(message.type).toBe('bridge-request');
-    expect(message.requestId).toBe('test-id');
-    expect(message.namespace).toBe('test');
-    expect(message.action).toBe('action');
+    expect(message.payload.requestId).toBe('test-id');
+    expect(message.payload.namespace).toBe('test');
+    expect(message.payload.action).toBe('action');
   });
 
-  it('should validate BridgeResponseMessage structure', () => {
-    const successMessage: BridgeResponseMessage = {
-      type: 'bridge-response',
+  it('validates BridgeResponseMessage structure', () => {
+    const successMessage: BridgeResponseMessage = createCardRuntimeMessage('bridge-response', {
       requestId: 'test-id',
-      result: { data: 'test' },
-    };
+      success: true,
+      data: { data: 'test' },
+    });
 
     expect(successMessage.type).toBe('bridge-response');
-    expect(successMessage.result).toEqual({ data: 'test' });
+    expect(successMessage.payload.data).toEqual({ data: 'test' });
 
-    const errorMessage: BridgeResponseMessage = {
-      type: 'bridge-response',
+    const errorMessage: BridgeResponseMessage = createCardRuntimeMessage('bridge-response', {
       requestId: 'test-id',
+      success: false,
       error: {
         code: 'ERROR_CODE',
         message: 'Error message',
       },
-    };
+    });
 
-    expect(errorMessage.error?.code).toBe('ERROR_CODE');
+    expect(errorMessage.payload.error?.code).toBe('ERROR_CODE');
   });
 
-  it('should validate InitMessage structure', () => {
-    const message: InitMessage = {
-      type: 'init',
-      payload: {
-        config: { title: 'Test' },
-        theme: { css: '', tokens: {} },
-        resources: {},
-        locale: 'zh-CN',
+  it('validates InitMessage structure', () => {
+    const message: InitMessage = createCardRuntimeMessage('init', {
+      config: { title: 'Test' },
+      bridge: {
+        pluginId: 'chips-official.rich-text-card',
+        sessionNonce: 'session-1',
       },
-    };
+      theme: { css: '', tokens: {} },
+      resources: {},
+      locale: 'zh-CN',
+    });
 
     expect(message.type).toBe('init');
     expect(message.payload.locale).toBe('zh-CN');
+    expect(message.payload.bridge?.pluginId).toBe('chips-official.rich-text-card');
   });
 
-  it('should validate ConfigUpdateMessage structure', () => {
-    const message: ConfigUpdateMessage = {
-      type: 'config-update',
-      pluginId: 'chips-official.rich-text-card',
-      sessionNonce: 'session-1',
+  it('validates ConfigUpdateMessage structure', () => {
+    const message: ConfigUpdateMessage = createCardRuntimeMessage('config-update', {
       config: { title: 'Updated' },
       persist: true,
-    };
+    });
 
     expect(message.type).toBe('config-update');
-    expect(message.config).toEqual({ title: 'Updated' });
-    expect(message.persist).toBe(true);
+    expect(message.payload.config).toEqual({ title: 'Updated' });
+    expect(message.payload.persist).toBe(true);
   });
 
-  it('should validate ResizeMessage structure', () => {
-    const message: ResizeMessage = {
-      type: 'resize',
-      pluginId: 'chips-official.rich-text-card',
-      sessionNonce: 'session-1',
+  it('validates ResizeMessage structure', () => {
+    const message: ResizeMessage = createCardRuntimeMessage('resize', {
       width: 800,
       height: 600,
-    };
+    });
 
     expect(message.type).toBe('resize');
-    expect(message.width).toBe(800);
-    expect(message.height).toBe(600);
+    expect(message.payload.width).toBe(800);
+    expect(message.payload.height).toBe(600);
   });
 
-  it('should validate ThemeChangeMessage structure', () => {
-    const message: ThemeChangeMessage = {
-      type: 'theme-change',
+  it('validates ThemeChangeMessage structure', () => {
+    const message: ThemeChangeMessage = createCardRuntimeMessage('theme-change', {
       theme: {
         css: 'body { color: red; }',
         tokens: { primary: '#ff0000' },
       },
-    };
+    });
 
     expect(message.type).toBe('theme-change');
-    expect(message.theme.css).toContain('color: red');
+    expect(message.payload.theme.css).toContain('color: red');
   });
 
-  it('should validate LanguageChangeMessage structure', () => {
-    const message: LanguageChangeMessage = {
-      type: 'language-change',
+  it('validates LanguageChangeMessage structure', () => {
+    const message: LanguageChangeMessage = createCardRuntimeMessage('language-change', {
       locale: 'en-US',
       vocabulary: { 'test.key': 'Test Value' },
-    };
+      vocabularyVersion: 'v2',
+    });
 
     expect(message.type).toBe('language-change');
-    expect(message.locale).toBe('en-US');
-    expect(message.vocabulary['test.key']).toBe('Test Value');
+    expect(message.payload.locale).toBe('en-US');
+    expect(message.payload.vocabulary?.['test.key']).toBe('Test Value');
   });
 });
