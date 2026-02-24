@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createCardRuntimeMessage } from '@chips/sdk/card-runtime';
 import { IframeBridge } from '../src/shared/bridge/iframe-bridge';
 
 const HOST_ORIGIN = window.location.origin;
@@ -9,51 +10,32 @@ function dispatchHostMessage(data: unknown, origin = HOST_ORIGIN): void {
       data,
       origin,
       source: window.parent,
-    })
+    }),
   );
 }
 
-function createInitMessage(): {
-  type: 'init';
-  payload: {
-      bridge: { pluginId: string; sessionNonce: string; trustedOrigin: string };
-    config: Record<string, unknown>;
-    theme: { css: string; tokens: Record<string, string> };
-    resources: Record<string, string>;
-    locale: string;
-    vocabulary: Record<string, string>;
-    vocabularyVersion: string;
+function createInitMessage() {
+  return createCardRuntimeMessage('init', {
+    bridge: {
+      pluginId: 'chips-official.rich-text-card',
+      sessionNonce: 'session-1',
+      trustedOrigin: HOST_ORIGIN,
+    },
+    config: {},
+    theme: { css: '', tokens: {} },
+    resources: {},
+    locale: 'en-US',
+    vocabulary: { 'toolbar.bold': 'Bold' },
+    vocabularyVersion: 'v1',
     i18n: {
-      locale: string;
-      version: string;
-      payload: { mode: 'full'; vocabulary: Record<string, string> };
-    };
-  };
-} {
-  return {
-    type: 'init',
-    payload: {
-      bridge: {
-        pluginId: 'chips-official.rich-text-card',
-        sessionNonce: 'session-1',
-        trustedOrigin: HOST_ORIGIN,
-      },
-      config: {},
-      theme: { css: '', tokens: {} },
-      resources: {},
       locale: 'en-US',
-      vocabulary: { 'toolbar.bold': 'Bold' },
-      vocabularyVersion: 'v1',
-      i18n: {
-        locale: 'en-US',
-        version: 'v1',
-        payload: {
-          mode: 'full',
-          vocabulary: { 'toolbar.bold': 'Bold' },
-        },
+      version: 'v1',
+      payload: {
+        mode: 'full' as const,
+        vocabulary: { 'toolbar.bold': 'Bold' },
       },
     },
-  };
+  });
 }
 
 describe('IframeBridge', () => {
@@ -74,35 +56,50 @@ describe('IframeBridge', () => {
     });
   });
 
-  it('sends bridge request with plugin identity and nonce after init', async () => {
+  it('sends ready handshake on bootstrap', async () => {
+    bridge.destroy();
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
+    bridge = new IframeBridge();
+    await Promise.resolve();
 
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protocol: 'chips-card-runtime',
+        type: 'ready',
+      }),
+      '*',
+    );
+  });
+
+  it('sends bridge request envelope after init', async () => {
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
     dispatchHostMessage(createInitMessage());
+    postMessageSpy.mockClear();
+
     const requestPromise = bridge.invoke('resource', 'fetch', { uri: 'chips://card/demo' });
 
-    expect(postMessageSpy).toHaveBeenCalledTimes(1);
-    const [requestMessage, targetOrigin] = postMessageSpy.mock.calls[0] ?? [];
-    expect(targetOrigin).toBe(HOST_ORIGIN);
-    expect(requestMessage).toMatchObject({
-      type: 'bridge-request',
-      pluginId: 'chips-official.rich-text-card',
-      sessionNonce: 'session-1',
-      namespace: 'resource',
-      action: 'fetch',
-    });
-    expect(typeof (requestMessage as { requestId: unknown }).requestId).toBe('string');
-    expect(typeof (requestMessage as { requestNonce: unknown }).requestNonce).toBe('string');
+    const requestCall = postMessageSpy.mock.calls.find((entry) => (entry[0] as { type?: string }).type === 'bridge-request');
+    expect(requestCall).toBeDefined();
 
-    const requestId = (requestMessage as { requestId: string }).requestId;
-    const requestNonce = (requestMessage as { requestNonce: string }).requestNonce;
-    dispatchHostMessage({
-      type: 'bridge-response',
-      pluginId: 'chips-official.rich-text-card',
-      sessionNonce: 'session-1',
-      requestId,
-      requestNonce,
-      result: { content: 'ok' },
-    });
+    const [requestMessage, targetOrigin] = requestCall as [Record<string, unknown>, string];
+    expect(targetOrigin).toBe(HOST_ORIGIN);
+    expect(requestMessage.protocol).toBe('chips-card-runtime');
+    expect(requestMessage.type).toBe('bridge-request');
+
+    const payload = requestMessage.payload as Record<string, unknown>;
+    expect(payload.namespace).toBe('resource');
+    expect(payload.action).toBe('fetch');
+    expect(typeof payload.requestId).toBe('string');
+    expect(typeof payload.requestNonce).toBe('string');
+
+    dispatchHostMessage(
+      createCardRuntimeMessage('bridge-response', {
+        requestId: payload.requestId as string,
+        requestNonce: payload.requestNonce as string,
+        success: true,
+        data: { content: 'ok' },
+      }),
+    );
 
     await expect(requestPromise).resolves.toEqual({ content: 'ok' });
   });
@@ -112,41 +109,43 @@ describe('IframeBridge', () => {
     bridge.onLanguageChange(callback);
 
     dispatchHostMessage(createInitMessage());
-    dispatchHostMessage({
-      type: 'language-change',
-      pluginId: 'chips-official.rich-text-card',
-      sessionNonce: 'session-1',
-      i18n: {
-        locale: 'ja-JP',
-        version: 'v2',
-        payload: {
-          mode: 'full',
-          vocabulary: {
-            'dialog.confirm': '確定',
+    dispatchHostMessage(
+      createCardRuntimeMessage('language-change', {
+        i18n: {
+          locale: 'ja-JP',
+          version: 'v2',
+          payload: {
+            mode: 'full',
+            vocabulary: {
+              'dialog.confirm': '確定',
+            },
           },
         },
-      },
-    });
+      }),
+    );
 
     expect(callback).toHaveBeenCalledWith('ja-JP', {
       'dialog.confirm': '確定',
     });
   });
 
-  it('notifies host with security envelope after init', () => {
+  it('notifies host with runtime envelope after init', () => {
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
 
     dispatchHostMessage(createInitMessage());
+    postMessageSpy.mockClear();
+
     bridge.notifyConfigUpdate({ content_text: 'next' });
 
     expect(postMessageSpy).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
+        protocol: 'chips-card-runtime',
         type: 'config-update',
-        pluginId: 'chips-official.rich-text-card',
-        sessionNonce: 'session-1',
-        config: { content_text: 'next' },
-      },
-      HOST_ORIGIN
+        payload: {
+          config: { content_text: 'next' },
+        },
+      }),
+      HOST_ORIGIN,
     );
   });
 
@@ -154,17 +153,20 @@ describe('IframeBridge', () => {
     const postMessageSpy = vi.spyOn(window.parent, 'postMessage');
 
     dispatchHostMessage(createInitMessage());
+    postMessageSpy.mockClear();
+
     bridge.notifyConfigUpdateWithOptions({ content_text: 'next' }, { persist: true });
 
     expect(postMessageSpy).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
+        protocol: 'chips-card-runtime',
         type: 'config-update',
-        pluginId: 'chips-official.rich-text-card',
-        sessionNonce: 'session-1',
-        config: { content_text: 'next' },
-        persist: true,
-      },
-      HOST_ORIGIN
+        payload: {
+          config: { content_text: 'next' },
+          persist: true,
+        },
+      }),
+      HOST_ORIGIN,
     );
   });
 });
