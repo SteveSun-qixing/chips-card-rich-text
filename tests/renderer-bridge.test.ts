@@ -65,7 +65,7 @@ describe('Renderer Bridge Integration', () => {
   });
 
   it('should use bridge invoke for resource fetch in onInit', async () => {
-    mockInvoke.mockResolvedValue({ content: '<p>fetched</p>' });
+    mockInvoke.mockResolvedValue({ data: '<p>fetched</p>' });
 
     const wrapper = mount(Renderer);
 
@@ -82,8 +82,9 @@ describe('Renderer Bridge Integration', () => {
     });
 
     expect(mockInvoke).toHaveBeenCalledWith('resource', 'fetch', {
-      uri: 'chips://card/card-123/content.html',
-      options: { as: 'text', encoding: 'utf-8', cache: true },
+      identifier: 'chips://card/card-123/content.html',
+      responseType: 'text',
+      useCache: true,
     });
 
     wrapper.unmount();
